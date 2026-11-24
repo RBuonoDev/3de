@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3DE Estúdio — CAD no navegador</title>
+<link rel="icon" type="image/svg+xml" href="/editor/logo.svg">
+<link rel="stylesheet" href="/editor/editor.css">
+<script>try { document.documentElement.dataset.theme = JSON.parse(localStorage.getItem('3de-prefs') || '{}').theme || 'dark'; } catch (e) {}</script>
+</head>
+<body>
+<div id="app">
+  <!-- Barra do aplicativo -->
+  <header id="appbar">
+    <button class="brand" id="homeBtn" title="Página inicial"><img src="/editor/logo.svg" alt=""><b>3DE</b><small>Estúdio</small></button>
+    <span class="sep"></span>
+    <div class="menu-wrap">
+      <button class="flat" id="fileMenuBtn"><span data-icon="folder"></span>Arquivo</button>
+      <div class="menu hidden" id="fileMenu"></div>
+    </div>
+    <button class="icon" id="qSave" title="Salvar projeto (Ctrl+S)" data-icon="download"></button>
+    <button class="icon" id="qUndo" title="Desfazer (Ctrl+Z)" data-icon="undo"></button>
+    <button class="icon" id="qRedo" title="Refazer (Ctrl+Y)" data-icon="redo"></button>
+    <span class="sep"></span>
+    <div class="doctab"><span id="docTitle" title="Clique duas vezes para renomear">Sem título</span><button class="x" id="closeDoc" title="Fechar">×</button></div>
+    <button class="icon plus" id="newDoc" title="Nova peça">+</button>
+    <span class="grow"></span>
+    <label class="search"><span data-icon="search"></span><input id="cmdSearch" placeholder="Pesquisar comandos" list="cmdList"><kbd>S</kbd></label>
+    <datalist id="cmdList"></datalist>
+    <span class="grow"></span>
+    <button class="icon" id="helpBtn" title="Atalhos e ajuda" data-icon="help"></button>
+    <button class="icon" id="settingsBtn" title="Preferências" data-icon="gear"></button>
+    <span class="version">v2.0</span>
+  </header>
+
+  <!-- Faixa de comandos -->
+  <nav id="ribbon">
+    <button class="project" id="projectBtn"><span data-icon="project"></span><b>Projeto</b><small>Peça · mm</small></button>
+    <div class="ribbon-main">
+      <div class="tabs" id="tabs"></div>
+      <div class="groups" id="groups"></div>
+    </div>
+  </nav>
+
+  <main id="viewport">
+    <canvas id="gl"></canvas>
+    <div id="cubeWrap">
+      <canvas id="cube" width="124" height="124" title="Clique numa face para ver a peça daquele lado"></canvas>
+      <button id="cubeHome" title="Vista inicial" data-icon="home"></button>
+    </div>
+    <div id="overlay"></div>
+
+    <aside id="navigator" class="panel">
+      <div class="panel-head"><b>Navegador</b><span id="bodyCount">0 corpos</span></div>
+      <div id="tree"></div>
+    </aside>
+
+    <aside id="props" class="panel hidden">
+      <div class="panel-head"><b id="propsTitle">Propriedades</b>
+        <span class="actions"><button id="okBtn" class="ok" title="OK (Enter)">✓</button><button id="cancelBtn" class="cancel" title="Cancelar (Esc)">✕</button></span>
+      </div>
+      <div id="propsBody"></div>
+    </aside>
+
+    <div id="viewtools"></div>
+    <a id="readerBtn" href="/ler-desenho" title="Transformar uma foto ou desenho técnico em peça 3D">Digitalizador 3D</a>
+    <div id="statusbar"><span id="status">Pronto.</span><span id="cursor"></span></div>
+
+    <footer id="timeline">
+      <span class="tl-title">Histórico</span>
+      <button class="tl-btn" id="tlStart" title="Voltar ao início" data-icon="tlfirst"></button>
+      <button class="tl-btn" id="tlPrev" title="Um passo para trás" data-icon="tlprev"></button>
+      <button class="tl-btn" id="tlNext" title="Um passo para a frente" data-icon="tlnext"></button>
+      <button class="tl-btn" id="tlEnd" title="Ir ao fim" data-icon="tllast"></button>
+      <div id="tlTrack"></div>
+    </footer>
+
+    <!-- Tela de início: as três formas de começar -->
+    <section id="home" class="hidden">
+      <div class="home-inner">
+        <header class="home-hero">
+          <div>
+            <span class="kicker">3DE Estúdio · CAD paramétrico no navegador</span>
+            <h1>O que vamos <em>construir</em> hoje?</h1>
+            <p>Desenhe uma peça do zero, continue um projeto salvo ou deixe o Digitalizador 3D transformar a foto de um desenho técnico em um modelo editável.</p>
+          </div>
+          <svg class="hero-cube" viewBox="0 0 120 120" aria-hidden="true">
+            <path class="f top" d="M60 14 102 38 60 62 18 38z"/><path class="f left" d="M18 38 60 62v46L18 84z"/><path class="f right" d="M60 62 102 38v46l-42 24z"/>
+            <path class="edge" d="M60 62v46"/><rect class="scan" x="10" y="12" width="100" height="2.5" rx="1.2"/>
+          </svg>
+        </header>
+        <div class="choices">
+          <button class="choice" data-home="new">
+            <span class="choice-icon" data-icon="newdoc"></span>
+            <b>Criar projeto</b><small>Uma peça nova, em milímetros, com esboços e recursos editáveis.</small>
+            <span class="cta">Começar <i>→</i></span>
+          </button>
+          <button class="choice" data-home="open">
+            <span class="choice-icon" data-icon="openbox"></span>
+            <b>Abrir arquivo</b><small>Continue um projeto .3de ou abra uma malha STL de outro programa.</small>
+            <span class="cta">Escolher arquivo <i>→</i></span>
+          </button>
+          <a class="choice featured" href="/ler-desenho">
+            <span class="badge">Principal</span>
+            <span class="choice-icon" data-icon="scanner"></span>
+            <b>Digitalizador 3D</b><small>Envie a foto ou o desenho técnico: o 3DE reconhece a peça, lê as cotas e gera o modelo.</small>
+            <span class="cta">Digitalizar desenho <i>→</i></span>
+          </a>
+        </div>
+        <div class="home-cols">
+          <div><h2>Recentes</h2><div id="recents" class="shelf"></div></div>
+          <div><h2>Exemplos para explorar</h2><div id="examples" class="shelf"></div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<!-- Abertura animada: o cubo do 3DE é montado e "escaneado" -->
+<div id="splash" aria-hidden="true">
+  <div class="splash-stage">
+    <svg class="splash-cube" viewBox="0 0 120 120">
+      <path class="f top" d="M60 14 102 38 60 62 18 38z"/>
+      <path class="f left" d="M18 38 60 62v46L18 84z"/>
+      <path class="f right" d="M60 62 102 38v46l-42 24z"/>
+      <path class="outline" d="M60 14 102 38v46l-42 24-42-24V38zM18 38l42 24 42-24"/>
+      <path class="edge" d="M60 62v46"/>
+      <rect class="scan" x="6" y="10" width="108" height="3" rx="1.5"/>
+    </svg>
+    <div class="splash-word"><b>3DE</b><span>Estúdio</span></div>
+    <p class="splash-tag">Do desenho técnico à peça 3D</p>
+    <div class="splash-bar"><i></i></div>
+  </div>
+</div>
+<script>
+// A abertura aparece uma vez por visita (aba) e some sozinha ou com um clique.
+(function () {
+  const splash = document.getElementById('splash');
+  let seen = false;
+  try { seen = sessionStorage.getItem('3de-abertura') === '1'; sessionStorage.setItem('3de-abertura', '1'); } catch (e) { /* sem armazenamento */ }
+  if (seen || new URLSearchParams(location.search).has('open')) { splash.remove(); return; }
+  const finish = () => {
+    if (!splash.isConnected || splash.classList.contains('done')) return;
+    splash.classList.add('done');
+    setTimeout(() => splash.remove(), 650);
+  };
+  const reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  setTimeout(finish, reduced ? 700 : 2700);
+  splash.addEventListener('click', finish);
+  window.addEventListener('keydown', finish, { once: true });
+})();
+</script>
+<input id="fileOpen" type="file" accept=".3de,.json,.stl,.obj" hidden>
+<input id="fileImport" type="file" accept=".stl,.obj" hidden>
+<input id="fileSketch" type="file" accept=".dxf,.svg" hidden>
+<input id="fileDesign" type="file" accept=".3de,.json" hidden>
+<link rel="modulepreload" href="/editor/gfx.js"><link rel="modulepreload" href="/editor/kernel.js"><link rel="modulepreload" href="/editor/files3d.js"><link rel="modulepreload" href="/editor/icons.js">
+<script type="module" src="/editor/editor.js"></script>
+</body>
+</html>

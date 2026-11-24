@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: 3de-cad
+    runtime: python
+    plan: free
+    # Instala as dependências e já baixa o modelo de OCR, para a primeira leitura não demorar.
+    buildCommand: pip install -r requirements.txt && python -c "from dimension_ocr import _reader; _reader()"
+    # Um único processo: as peças transferidas ficam na memória desse processo.
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 180 app:app
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      # Connection string do Supabase (PostgreSQL). O Render pede o valor na criação;
+      # use a do "Session pooler" (porta 5432). Sem ela o site guarda tudo em memória.
+      - key: DATABASE_URL
+        sync: false

@@ -1,0 +1,6 @@
+__pycache__/
+.venv/
+.vscode/
+/generated_projects/
+*~
+.DS_Store

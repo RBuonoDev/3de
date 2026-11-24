@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Cubo isométrico do 3DE com uma aresta em destaque -->
+  <path d="M32 6 56 19v26L32 58 8 45V19z" fill="#1f5fa8"/>
+  <path d="M32 6 56 19 32 32 8 19z" fill="#5b9be0"/>
+  <path d="M32 32 56 19v26L32 58z" fill="#174a85"/>
+  <path d="M32 32v26" stroke="#f0a020" stroke-width="4" stroke-linecap="round"/>
+</svg>

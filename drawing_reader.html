@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3DE Estúdio · Digitalizador 3D</title>
+<link rel="icon" type="image/svg+xml" href="/editor/logo.svg">
+<style>
+  /* Digitalizador 3D — mesma identidade do editor: grafite azulado com destaque laranja. */
+  :root {
+    --bg: #0b0f16; --bar: #0e131c; --panel: #131b28; --panel-2: #172031; --field: #0c1119;
+    --line: #1e2838; --line-2: #2a374c; --text: #e7ecf3; --muted: #8f9cb1; --dim: #5e6b80;
+    --accent: #ff8a3d; --accent-2: #ffb07a; --accent-soft: rgba(255,138,61,.14);
+    --blue: #5aa2ff; --blue-soft: rgba(90,162,255,.14); --warn: #ffb074; --ok: #35c48a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, sans-serif; overflow: hidden; }
+  button, input { font: inherit; color: inherit; }
+  a { color: inherit; }
+  ::-webkit-scrollbar { width: 10px; } ::-webkit-scrollbar-thumb { background: #243046; border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+
+  /* Barra superior */
+  .bar { height: 48px; display: flex; align-items: center; gap: 14px; padding: 0 14px; background: var(--bar); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 8px; text-decoration: none; padding: 4px 8px 4px 4px; border-radius: 8px; }
+  .brand:hover { background: #1a2332; }
+  .brand img { width: 22px; height: 22px; }
+  .brand b { font-size: 15px; }
+  .brand small { color: var(--accent); font-weight: 700; font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase; }
+  .bar .sep { width: 1px; height: 22px; background: var(--line-2); }
+  .bar .title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .bar .title svg { width: 20px; height: 20px; }
+  #steps { display: flex; gap: 4px; margin: 0 0 0 18px; padding: 0; list-style: none; }
+  #steps li { display: flex; align-items: center; gap: 7px; padding: 5px 12px 5px 6px; border-radius: 999px; color: var(--dim); font-size: 12.5px; border: 1px solid transparent; }
+  #steps li span { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: #1a2332; font-size: 11px; font-weight: 700; }
+  #steps li.active { color: var(--text); border-color: rgba(255,138,61,.45); background: var(--accent-soft); }
+  #steps li.active span { background: var(--accent); color: #1a0d03; }
+  #steps li.done { color: var(--muted); }
+  #steps li.done span { background: var(--ok); color: #04160d; }
+  .grow { flex: 1; }
+  .back { text-decoration: none; padding: 7px 12px; border: 1px solid var(--line-2); border-radius: 9px; background: var(--panel); }
+  .back:hover { border-color: var(--accent); }
+
+  main { display: grid; grid-template-columns: 380px 1fr; height: calc(100vh - 48px); }
+  aside { display: flex; flex-direction: column; border-right: 1px solid var(--line); background: #0d131d; min-height: 0; }
+  .scroll { flex: 1; overflow: auto; padding: 20px 18px 10px; }
+  .kicker { color: var(--accent); font-weight: 700; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; }
+  h1 { font-size: 24px; margin: 6px 0 8px; letter-spacing: -.3px; }
+  h2 { font-size: 13px; margin: 0 0 6px; color: var(--accent-2); text-transform: uppercase; letter-spacing: .8px; }
+  p { color: var(--muted); line-height: 1.5; margin: 6px 0; }
+
+  /* Áreas de envio (aceitam clique e arrastar e soltar) */
+  .box { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; margin: 16px 0 10px; padding: 24px 16px;
+    border: 1.5px dashed #33435c; border-radius: 14px; cursor: pointer; background: linear-gradient(180deg, rgba(90,162,255,.06), transparent); transition: border-color .15s, background .15s; }
+  .box:hover, .box.dragover { border-color: var(--accent); background: var(--accent-soft); }
+  .box svg { width: 44px; height: 44px; margin-bottom: 6px; }
+  .box b { font-size: 15px; }
+  .box small { color: var(--muted); }
+  .box input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .box.small { padding: 14px; margin: 8px 0 0; }
+  .box.small svg { width: 28px; height: 28px; margin: 0; }
+  details.alt { margin: 4px 0 12px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--panel); }
+  details.alt summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  details.alt[open] summary { color: var(--text); }
+
+  .card { border: 1px solid var(--line-2); border-radius: 12px; padding: 12px 14px; margin: 10px 0; background: var(--panel); }
+  #status { margin: 0; color: var(--text); min-height: 20px; }
+  #ocrPanel { display: none; }
+  #ocrPanel strong { display: block; margin-bottom: 2px; color: var(--blue); font-size: 12px; text-transform: uppercase; letter-spacing: .8px; }
+  #measurements { display: none; }
+
+  /* Campos de cotas */
+  label.dim { display: grid; grid-template-columns: 1fr 96px; align-items: center; gap: 4px 10px; margin: 0; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  label.dim:last-child { border-bottom: 0; }
+  label.dim small { grid-column: 1 / -1; color: #7f8ea6; font-size: 11.5px; }
+  label.dim.unread small { color: var(--warn); }
+  label.dim.candidate small { color: var(--ok); }
+  input[type=number] { background: var(--field); color: var(--text); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 8px; width: 96px; text-align: right; }
+  input[type=number]:focus { outline: none; border-color: var(--accent); }
+  input[type=number]:invalid { border-color: #d66; }
+  #uncertainty { color: var(--warn); }
+
+  button { background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 14px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible, input:focus-visible, .box:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  .send-wrap { padding: 12px 18px 16px; border-top: 1px solid var(--line); background: #0d131d; }
+  #send { width: 100%; padding: 12px; font-weight: 700; font-size: 15px; background: var(--accent); border-color: var(--accent); color: #1a0d03; border-radius: 11px; }
+  #send:hover:not(:disabled) { background: var(--accent-2); }
+
+  /* Barra de progresso */
+  #task { display: none; margin-top: 10px; color: var(--muted); font-size: 12.5px; }
+  #task progress { display: block; width: 100%; height: 6px; margin: 6px 0; accent-color: var(--accent); }
+
+  /* Seleção manual da vista principal */
+  #crop { display: none; max-width: 100%; border: 1px solid var(--line-2); border-radius: 8px; cursor: crosshair; touch-action: none; margin-top: 10px; }
+  #cropActions { display: none; }
+  #cropActions button { margin-top: 8px; width: 100%; }
+
+  /* Área de visualização: imagem/esboço à esquerda e peça 3D à direita */
+  #stage { position: relative; min-height: 400px; overflow: hidden; }
+  #view { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #view:active { cursor: grabbing; }
+  #tip { position: absolute; bottom: 16px; right: 18px; color: var(--muted); pointer-events: none; font-size: 12px; background: rgba(14,19,28,.85); border: 1px solid var(--line-2); padding: 5px 10px; border-radius: 999px; }
+  #emptyHint { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; text-align: center; color: var(--muted); }
+  #emptyHint svg { width: 150px; height: 150px; opacity: .9; animation: float 5s ease-in-out infinite; }
+  #emptyHint .scan { animation: scan 3.2s ease-in-out infinite; transform-box: view-box; }
+  #emptyHint b { display: block; color: var(--text); font-size: 17px; margin-top: 14px; }
+  @keyframes float { 50% { transform: translateY(-6px); } }
+  @keyframes scan { 0%, 10% { opacity: 0; transform: translateY(0); } 25%, 70% { opacity: .9; } 85%, 100% { opacity: 0; transform: translateY(96px); } }
+  #sourcePanel { display: none; position: absolute; left: 0; top: 0; width: 42%; height: 100%; border-right: 1px solid var(--line); background: #0f1520; }
+  #sourcePanel img, #sketchCanvas { width: calc(100% - 20px); height: calc(100% - 68px); margin: 10px; object-fit: contain; background: #fff; border-radius: 8px; }
+  #sketchCanvas { display: none; }
+  #sourceTabs { display: flex; gap: 4px; padding: 8px 10px; height: 48px; border-bottom: 1px solid var(--line); }
+  #sourceTabs button { padding: 4px 14px; border-radius: 999px; font-size: 12.5px; }
+  #sourceTabs button[aria-pressed=true] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-2); }
+  #stage.has-image #sourcePanel { display: block; }
+  #stage.has-image #view { width: 58%; margin-left: 42%; }
+  #stage.has-image #emptyHint { left: 42%; }
+
+  /* Telas estreitas: painel em cima, visualização embaixo */
+  @media (max-width: 820px) {
+    body { overflow: auto; }
+    #steps { display: none; }
+    main { grid-template-columns: 1fr; height: auto; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); }
+    #stage { height: 70vh; }
+    #stage.has-image #sourcePanel { position: relative; width: 100%; height: 45%; border-right: 0; border-bottom: 1px solid var(--line); }
+    #stage.has-image #view { width: 100%; height: 55%; margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="/" title="Voltar ao editor"><img src="/editor/logo.svg" alt=""><b>3DE</b><small>Estúdio</small></a>
+  <span class="sep"></span>
+  <span class="title">
+    <svg viewBox="0 0 32 32" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" aria-hidden="true">
+      <path d="M4 10V5h5M23 5h5v5M28 22v5h-5M9 27H4v-5" stroke="#8f9cb1"/><path d="M10 20l6-9 6 9z" fill="rgba(90,162,255,.22)" stroke="#5aa2ff"/><path d="M3 16h26" stroke="#ff8a3d" stroke-width="2.2"/>
+    </svg>
+    Digitalizador 3D
+  </span>
+  <ol id="steps" aria-label="Etapas">
+    <li class="active" data-step="1"><span>1</span>Enviar desenho</li>
+    <li data-step="2"><span>2</span>Conferir cotas</li>
+    <li data-step="3"><span>3</span>Abrir no editor</li>
+  </ol>
+  <span class="grow"></span>
+  <a class="back" href="/">← Voltar ao editor</a>
+</header>
+<main>
+  <aside>
+    <div class="scroll">
+      <span class="kicker">Digitalizador 3D</span>
+      <h1>Imagem para peça 3D</h1>
+      <p>Envie a foto ou o desenho técnico com cotas legíveis. O 3DE reconhece a peça, lê os números e gera um modelo que você confere antes de levar ao editor. Duas ou três vistas alinhadas (frontal, superior e lateral, no 1º ou no 3º diedro) podem ir na mesma prancha: os furos circulares de cada vista viram furos passantes.</p>
+      <label class="box">
+        <svg viewBox="0 0 32 32" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" aria-hidden="true">
+          <rect x="4" y="6" width="24" height="20" rx="2" stroke="#8f9cb1"/><path d="M4 22l7-7 5 5 4-4 8 8" stroke="#5aa2ff"/><circle cx="21" cy="12" r="2.4" stroke="#5aa2ff"/><path d="M2 16h28" stroke="#ff8a3d" stroke-width="2"/>
+        </svg>
+        <b>Envie o desenho técnico</b>
+        <small>PNG, JPG ou WEBP · clique ou arraste a imagem aqui</small>
+        <input id="file" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Selecionar desenho">
+      </label>
+      <details class="alt">
+        <summary>Tem um modelo feito em outro programa CAD? Abra uma malha STL</summary>
+        <label class="box small">
+          <svg viewBox="0 0 32 32" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" aria-hidden="true"><path d="M16 4 27 10v12L16 28 5 22V10z" stroke="#8f9cb1"/><path d="M16 9V2M13 5l3-3 3 3" stroke="#ff8a3d"/></svg>
+          <small>Exporte como STL e solte o arquivo aqui</small>
+          <input id="cadfile" type="file" accept=".stl,model/stl" aria-label="Abrir malha STL">
+        </label>
+      </details>
+
+      <div class="card">
+        <p id="status" role="status" aria-live="polite">Aguardando a imagem do desenho ou uma malha STL.</p>
+        <div id="task" role="status" aria-live="polite">
+          <span id="taskLabel"></span>
+          <progress id="taskBar"></progress>
+          <small id="taskElapsed"></small>
+        </div>
+      </div>
+      <div id="ocrPanel" class="card" aria-live="polite"><strong>Cotas detectadas</strong><p id="ocrSummary"></p></div>
+
+      <canvas id="crop" aria-label="Selecione a vista principal arrastando sobre a imagem"></canvas>
+      <div id="cropActions"><button id="cropButton" disabled>Ler só a área selecionada</button></div>
+
+      <section id="measurements" class="card">
+        <h2 id="modelTitle">Cotas em milímetros</h2>
+        <form id="fields" onsubmit="return false"></form>
+        <p id="uncertainty"></p>
+        <p id="reviewNote">Confira sobretudo furos, diâmetro interno e alturas antes de fabricar.</p>
+        <div class="row"><button id="update">Atualizar modelo</button><button id="download">Baixar STL</button></div>
+      </section>
+    </div>
+    <div class="send-wrap"><button id="send" disabled>Abrir no editor 3D →</button></div>
+  </aside>
+
+  <div id="stage">
+    <div id="sourcePanel">
+      <div id="sourceTabs">
+        <button id="showImage" aria-pressed="true">Imagem</button>
+        <button id="showSketch" aria-pressed="false" disabled>Esboço reconhecido</button>
+      </div>
+      <img id="sourcePhoto" alt="Desenho técnico enviado">
+      <canvas id="sketchCanvas" width="600" height="600" aria-label="Esboço reconhecido"></canvas>
+    </div>
+    <canvas id="view" aria-label="Prévia 3D da peça"></canvas>
+    <div id="emptyHint">
+      <div>
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <path d="M60 14 102 38 60 62 18 38z" fill="#5b9be0"/><path d="M18 38 60 62v46L18 84z" fill="#1f5fa8"/><path d="M60 62 102 38v46l-42 24z" fill="#174a85"/>
+          <path d="M60 62v46" stroke="#ff8a3d" stroke-width="4.5" stroke-linecap="round"/><rect class="scan" x="10" y="12" width="100" height="2.5" rx="1.2" fill="#ffb07a"/>
+        </svg>
+        <b>A prévia da peça aparece aqui</b>
+        <span>Envie um desenho à esquerda para começar.</span>
+      </div>
+    </div>
+    <span id="tip">Arraste para girar · role para aproximar · duplo clique centraliza</span>
+  </div>
+</main>
+
+<script src="/stl-reader.js"></script>
+<script>
+"use strict";
+
+/* =========================================================================
+   Referências aos elementos da página
+   ========================================================================= */
+const $ = selector => document.querySelector(selector);
+const ui = {
+  file: $('#file'), cadFile: $('#cadfile'), status: $('#status'),
+  fields: $('#fields'), section: $('#measurements'), send: $('#send'),
+  modelTitle: $('#modelTitle'), uncertainty: $('#uncertainty'), reviewNote: $('#reviewNote'),
+  ocrPanel: $('#ocrPanel'), ocrSummary: $('#ocrSummary'),
+  task: $('#task'), taskLabel: $('#taskLabel'), taskBar: $('#taskBar'), taskElapsed: $('#taskElapsed'),
+  crop: $('#crop'), cropActions: $('#cropActions'), cropButton: $('#cropButton'),
+  stage: $('#stage'), sourcePhoto: $('#sourcePhoto'),
+  sketch: $('#sketchCanvas'), showImage: $('#showImage'), showSketch: $('#showSketch'),
+  view: $('#view'),
+};
+const ctx = ui.view.getContext('2d');
+const cropCtx = ui.crop.getContext('2d');
+const sketchCtx = ui.sketch.getContext('2d');
+
+/* =========================================================================
+   Estado da página
+   ========================================================================= */
+const state = {
+  kind: 'bracket',          // tipo de peça reconhecida (define o modelo gerado)
+  dims: {},                 // cotas iniciais vindas do servidor
+  geometry: null,           // contornos normalizados (duas vistas, perfil 2D…)
+  currentStl: null,         // STL binário exibido na prévia
+  currentProjectUrl: null,  // projeto .3de já criado para o editor
+  sourceName: 'peca-3de',   // nome do arquivo enviado, usado nos downloads
+  imageStarted: 0,          // instante em que a leitura começou
+  sourceImage: null,        // imagem decodificada para o recorte
+  sourcePhotoUrl: null,
+  cropStart: null,
+  cropRect: null,
+};
+
+/* Câmera da prévia 3D */
+const camera = { rx: .55, rz: -.6, zoom: 1, drag: null };
+const DEFAULT_CAMERA = { rx: .55, rz: -.6, zoom: 1 };
+let mesh = { triangles: [], min: [-50, -50, 0], max: [50, 50, 50], center: [0, 0, 25] };
+
+/* =========================================================================
+   Nomes das cotas exibidos ao usuário
+   ========================================================================= */
+const DIMENSION_NAMES = {
+  arm_height: 'Altura dos braços', arm_span: 'Raio dos braços',
+  base_diameter: 'Diâmetro da base', base_height: 'Altura da base',
+  base_length: 'Comprimento da base', base_width: 'Largura da base',
+  block_depth: 'Profundidade do bloco', block_height: 'Altura do bloco', block_length: 'Comprimento do bloco',
+  body_diameter: 'Diâmetro do corpo',
+  bore_diameter: 'Diâmetro do furo central', bore_x: 'Posição X do furo', bore_y: 'Posição Y do furo',
+  boss_diameter: 'Diâmetro do cubo superior', boss_height: 'Altura total do cubo acima da ponte',
+  boss_length: 'Comprimento do ressalto', boss_width: 'Largura do ressalto',
+  bottom_thickness: 'Espessura da base',
+  bridge_height: 'Altura da ponte central', bridge_width: 'Largura da ponte central',
+  bulge_diameter: 'Diâmetro do ressalto arredondado', bulge_height: 'Altura do ressalto arredondado',
+  cavity_depth: 'Profundidade da cavidade', center_diameter: 'Diâmetro central',
+  depth: 'Profundidade', end_diameter: 'Diâmetro das pontas', end_length: 'Comprimento de cada ponta',
+  flange_diameter: 'Diâmetro do ressalto inferior', flange_height: 'Altura do ressalto inferior',
+  foot_notch_radius: 'Raio do entalhe da base', height: 'Altura',
+  hole_diameter: 'Diâmetro do furo', hole_radius: 'Raio dos furos',
+  hub_bore_radius: 'Raio do furo central', hub_radius: 'Raio do cubo',
+  inner_diameter: 'Diâmetro interno', left_boss_length: 'Comprimento do bloco esquerdo',
+  lower_hole_diameter: 'Diâmetro do furo inferior', lower_spacing: 'Distância entre furos inferiores',
+  middle_diameter: 'Diâmetro intermediário', middle_height: 'Altura intermediária',
+  middle_ring_diameter: 'Diâmetro do anel central',
+  mount_hole_diameter: 'Diâmetro dos furos de fixação',
+  mount_hole_x: 'Distância horizontal do centro aos furos', mount_hole_y: 'Distância vertical do centro aos furos',
+  notch_height: 'Altura do recorte', notch_width: 'Largura da abertura inferior',
+  outer_diameter: 'Diâmetro externo',
+  plate_height: 'Espessura da base', plate_length: 'Comprimento da base', plate_width: 'Largura da base',
+  profile_height: 'Altura do perfil 2D', profile_thickness: 'Espessura da extrusão', profile_width: 'Largura do perfil 2D',
+  rib_height: 'Altura das nervuras', rib_width: 'Espessura das nervuras',
+  right_boss_length: 'Comprimento do bloco direito',
+  shaft_length: 'Comprimento total do eixo', shoulder_diameter: 'Diâmetro dos ombros',
+  shoulder_length: 'Comprimento de cada ombro', slot_width: 'Largura da abertura',
+  stem_diameter: 'Diâmetro da haste', thickness: 'Espessura', top_depth: 'Profundidade da aba superior',
+  top_diameter: 'Diâmetro superior', top_height: 'Altura dos blocos superiores',
+  top_length: 'Comprimento superior', top_thickness: 'Espessura da aba superior',
+  total_height: 'Altura total', upper_hole_diameter: 'Diâmetro do furo superior',
+  upper_ring_diameter: 'Diâmetro do anel superior',
+  view_depth: 'Profundidade da peça', view_height: 'Altura da peça', view_width: 'Largura da peça',
+  wall_thickness: 'Espessura da parede', width: 'Largura',
+};
+
+function labelFor(key) {
+  if (state.kind === 'apostila1' && key === 'boss_height') return 'Altura do ressalto';
+  const hole = key.match(/^hole_(\d+)_(x|y|diameter)$/);
+  if (hole) {
+    const part = { x: 'posição X', y: 'posição Y', diameter: 'diâmetro' }[hole[2]];
+    return `Furo ${hole[1]} · ${part}`;
+  }
+  return DIMENSION_NAMES[key] || key;
+}
+
+/* =========================================================================
+   Utilitários
+   ========================================================================= */
+const seconds = since => ((performance.now() - since) / 1000).toFixed(1);
+const formatCount = n => n.toLocaleString('pt-BR');
+const baseName = filename => filename.replace(/\.[^.]+$/, '');
+
+function setStatus(message) { ui.status.textContent = message; }
+
+/** Etapas na barra superior: 1 enviar, 2 conferir, 3 abrir no editor. */
+function setStep(step) {
+  for (const item of document.querySelectorAll('#steps li')) {
+    const n = Number(item.dataset.step);
+    item.classList.toggle('active', n === step);
+    item.classList.toggle('done', n < step);
+  }
+}
+
+/** Lê uma resposta JSON mesmo quando o servidor devolve HTML de erro. */
+async function readJson(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw Error(response.ok ? 'Resposta inválida do servidor.' : `Erro ${response.status} no servidor.`);
+  }
+}
+
+/** Baixa um ArrayBuffer como arquivo. */
+function saveFile(data, filename, type) {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([data], { type }));
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 30000);
+}
+
+/* =========================================================================
+   Barra de progresso com tempo decorrido
+   ========================================================================= */
+let progressTimer = null, progressStarted = 0;
+
+function updateElapsed() {
+  ui.taskElapsed.textContent = `Tempo decorrido: ${Math.round((performance.now() - progressStarted) / 1000)} s`;
+}
+
+function progress(label, percent) {
+  ui.task.style.display = 'block';
+  if (!progressTimer) {
+    progressStarted = performance.now();
+    progressTimer = setInterval(updateElapsed, 300);
+  }
+  ui.taskLabel.textContent = label;
+  updateElapsed();
+  if (percent === undefined) {
+    ui.taskBar.removeAttribute('value');  // barra indeterminada
+  } else {
+    ui.taskBar.max = 100;
+    ui.taskBar.value = percent;
+  }
+}
+
+function finishProgress() {
+  clearInterval(progressTimer);
+  progressTimer = null;
+  ui.task.style.display = 'none';
+}
+
+/* =========================================================================
+   Abas Imagem / Esboço
+   ========================================================================= */
+function showSourceTab(sketch) {
+  ui.sourcePhoto.style.display = sketch ? 'none' : 'block';
+  ui.sketch.style.display = sketch ? 'block' : 'none';
+  ui.showImage.setAttribute('aria-pressed', String(!sketch));
+  ui.showSketch.setAttribute('aria-pressed', String(sketch));
+}
+ui.showImage.onclick = () => showSourceTab(false);
+ui.showSketch.onclick = () => showSourceTab(true);
+
+/* =========================================================================
+   Leitura do desenho
+   ========================================================================= */
+function showOcr(out) {
+  const readings = out.ocr_readings || [];
+  ui.ocrPanel.style.display = 'block';
+  ui.ocrSummary.textContent = (out.ocr_message || '') +
+    (readings.length ? ' Números encontrados: ' + readings.map(item => item.display || item.text).join(', ') + '.' : '');
+}
+
+async function handleDrawing(selected) {
+  state.sourceName = baseName(selected.name) || 'peca-3de';
+  state.imageStarted = performance.now();
+  progress('Preparando imagem');
+  await prepareCrop(selected);
+  await readImage(selected);
+}
+ui.file.onchange = () => ui.file.files[0] && handleDrawing(ui.file.files[0]);
+
+/** Envia a imagem ao servidor e monta o formulário de cotas. */
+async function readImage(blob) {
+  state.currentStl = null;
+  state.currentProjectUrl = null;
+  ui.send.disabled = true;
+  setStatus('Lendo o desenho…');
+  progress('Enviando e analisando o desenho');
+  const form = new FormData();
+  form.append('drawing', blob, 'desenho.png');
+  try {
+    const response = await fetch('/api/ler-desenho', { method: 'POST', body: form });
+    const out = await readJson(response);
+    if (!response.ok) throw Error(out.error || 'Não foi possível ler a imagem.');
+    showOcr(out);
+    if (!out.recognized) {
+      ui.section.style.display = 'none';
+      finishProgress();
+      setStatus((out.ocr_readings?.length
+        ? 'Consegui ler algumas cotas, mas ainda não consegui reconstruir a peça com segurança a partir desta vista. '
+        : '') + (out.message || out.error) +
+        ' Você pode selecionar só a vista principal na imagem abaixo para tentar novamente.');
+      return;
+    }
+    state.kind = out.kind || 'bracket';
+    state.geometry = out.geometry || null;
+    state.dims = out.dimensions;
+    ui.modelTitle.textContent = (out.name || 'Peça') + ' · cotas em milímetros';
+    ui.reviewNote.textContent = state.kind === 'apostila1'
+      ? 'Modelo aproximado e editável. Confira cada cota e a geometria antes de usar.'
+      : 'Confira sobretudo furos, diâmetro interno e alturas antes de fabricar.';
+    drawSketch();
+    buildFields(out.dimension_status || {});
+    ui.uncertainty.textContent = out.uncertain?.length
+      ? 'Confira as medidas sem cota explícita: ' + out.uncertain.join('; ') + '.'
+      : '';
+    ui.section.style.display = 'block';
+    setStatus(out.message);
+    finishProgress();
+    await update();
+  } catch (error) {
+    finishProgress();
+    setStatus('Não foi possível ler a imagem: ' + error.message);
+  }
+}
+
+/** Cria um campo numérico por cota, com o aviso de leitura do OCR. */
+function buildFields(statuses) {
+  ui.fields.replaceChildren();
+  for (const [key, value] of Object.entries(state.dims)) {
+    const row = document.createElement('label');
+    row.className = 'dim';
+    row.textContent = labelFor(key);
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = key.endsWith('_x') || key.endsWith('_y') ? '-250' : key === 'bore_diameter' ? '0' : '.1';
+    input.max = '500';
+    input.step = '.1';
+    input.value = value;
+    input.dataset.key = key;
+    // Enter em um campo atualiza a prévia.
+    input.addEventListener('keydown', event => { if (event.key === 'Enter') update(); });
+    row.append(input);
+    const status = statuses[key];
+    if (status) {
+      row.classList.add(status.state);
+      const note = document.createElement('small');
+      note.textContent = status.message;
+      row.append(note);
+    }
+    ui.fields.append(row);
+  }
+}
+
+/* =========================================================================
+   Recorte manual da vista principal
+   ========================================================================= */
+async function prepareCrop(blob) {
+  try {
+    state.sourceImage = await createImageBitmap(blob);
+    if (state.sourcePhotoUrl) URL.revokeObjectURL(state.sourcePhotoUrl);
+    state.sourcePhotoUrl = URL.createObjectURL(blob);
+    ui.sourcePhoto.src = state.sourcePhotoUrl;
+    showSourceTab(false);
+    ui.showSketch.disabled = true;
+    ui.stage.classList.add('has-image');
+    ui.crop.width = 300;
+    ui.crop.height = Math.round(300 * state.sourceImage.height / state.sourceImage.width);
+    ui.crop.style.display = 'block';
+    ui.cropActions.style.display = 'block';
+    state.cropRect = null;
+    ui.cropButton.disabled = true;
+    drawCrop();
+    scheduleRender();
+  } catch {
+    state.sourceImage = null;
+    ui.crop.style.display = 'none';
+    ui.cropActions.style.display = 'none';
+  }
+}
+
+function drawCrop() {
+  if (!state.sourceImage) return;
+  // Fundo branco: imagens com transparência (PNG exportado de SVG) ficam visíveis.
+  cropCtx.fillStyle = '#fff';
+  cropCtx.fillRect(0, 0, ui.crop.width, ui.crop.height);
+  cropCtx.drawImage(state.sourceImage, 0, 0, ui.crop.width, ui.crop.height);
+  if (state.cropRect) {
+    const [x, y, w, h] = state.cropRect;
+    cropCtx.fillStyle = 'rgba(50,120,220,.18)';
+    cropCtx.fillRect(x, y, w, h);
+    cropCtx.strokeStyle = '#64b0ff';
+    cropCtx.lineWidth = 2;
+    cropCtx.strokeRect(x, y, w, h);
+  }
+}
+
+function cropPoint(event) {
+  const box = ui.crop.getBoundingClientRect();
+  const clamp = (v, max) => Math.max(0, Math.min(max, v));
+  return [
+    clamp((event.clientX - box.left) * ui.crop.width / box.width, ui.crop.width),
+    clamp((event.clientY - box.top) * ui.crop.height / box.height, ui.crop.height),
+  ];
+}
+
+ui.crop.onpointerdown = event => {
+  state.cropStart = cropPoint(event);
+  ui.crop.setPointerCapture(event.pointerId);
+};
+ui.crop.onpointermove = event => {
+  if (!state.cropStart) return;
+  const [x0, y0] = state.cropStart, [x1, y1] = cropPoint(event);
+  state.cropRect = [Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)];
+  ui.cropButton.disabled = state.cropRect[2] < 35 || state.cropRect[3] < 35;
+  drawCrop();
+};
+ui.crop.onpointerup = ui.crop.onpointercancel = () => { state.cropStart = null; };
+
+ui.cropButton.onclick = async () => {
+  if (!state.sourceImage || !state.cropRect) return;
+  const [x, y, w, h] = state.cropRect;
+  const ratio = state.sourceImage.width / ui.crop.width;
+  const output = document.createElement('canvas');
+  output.width = Math.round(w * ratio);
+  output.height = Math.round(h * ratio);
+  const outCtx = output.getContext('2d');
+  outCtx.fillStyle = '#fff';
+  outCtx.fillRect(0, 0, output.width, output.height);
+  outCtx.drawImage(state.sourceImage, x * ratio, y * ratio, w * ratio, h * ratio, 0, 0, output.width, output.height);
+  const blob = await new Promise(resolve => output.toBlob(resolve, 'image/png'));
+  if (blob) {
+    state.imageStarted = performance.now();
+    await readImage(blob);
+  }
+};
+
+/* =========================================================================
+   Esboço 2D do que foi reconhecido
+   ========================================================================= */
+function drawSketch() {
+  const c = sketchCtx, dims = state.dims, geometry = state.geometry;
+  c.fillStyle = '#fafafa';
+  c.fillRect(0, 0, 600, 600);
+  c.strokeStyle = '#252c32';
+  c.lineWidth = 3;
+  c.lineJoin = 'round';
+  c.fillStyle = '#252c32';
+  c.font = '22px system-ui';
+
+  const outline = (points, cx, cy, sx, sy) => {
+    if (!Array.isArray(points) || points.length < 3) return;
+    c.beginPath();
+    points.forEach(([x, y], i) => (i ? c.lineTo : c.moveTo).call(c, cx + x * sx, cy - y * sy));
+    c.closePath();
+    c.stroke();
+  };
+  const circle = (x, y, r) => { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.stroke(); };
+
+  if (state.kind === 'two_views' && geometry) {
+    // Vistas na posição do desenho: frontal, superior abaixo e lateral ao lado.
+    const W = dims.view_width || 100, H = dims.view_height || 50, D = dims.view_depth || 50;
+    const hasSide = !!geometry.side, hasTop = !!geometry.top;
+    const k = Math.min(480 / (W + (hasSide ? D + 30 : 0)), 470 / (H + (hasTop ? D + 30 : 0)));
+    const fx = 60 + (W * k) / 2, fy = 70 + (H * k) / 2;
+    const view = (pts, holes, cx, cy, w, h, label) => {
+      c.fillText(label, cx - w / 2, cy - h / 2 - 12);
+      outline(pts, cx, cy, w, h);
+      c.save(); c.strokeStyle = '#c0471a';
+      for (const hole of holes || []) outline(hole, cx, cy, w, h);
+      c.restore();
+    };
+    c.font = '18px system-ui';
+    view(geometry.front, geometry.front_holes, fx, fy, W * k, H * k, 'Frontal');
+    if (hasTop) view(geometry.top, geometry.top_holes, fx, fy + (H * k) / 2 + 30 + (D * k) / 2, W * k, D * k, 'Superior');
+    if (hasSide) view(geometry.side, geometry.side_holes, fx + (W * k) / 2 + 30 + (D * k) / 2, fy, D * k, H * k, 'Lateral');
+  } else if (state.kind === 'profile2d' && geometry) {
+    c.fillText('Perfil reconhecido', 48, 36);
+    outline(geometry.outer, 300, 315, 460, 460);
+    for (const hole of geometry.holes || []) outline(hole, 300, 315, 460, 460);
+  } else if (state.kind === 'round') {
+    c.fillText('Vista circular', 48, 36);
+    const diameter = dims.outer_diameter || 100, radius = 230;
+    circle(300, 315, radius);
+    if (dims.bore_diameter) circle(300, 315, radius * dims.bore_diameter / diameter);
+    for (let i = 1; i <= 12; i++) {
+      const size = dims[`hole_${i}_diameter`];
+      if (size) circle(300 + 2 * radius * dims[`hole_${i}_x`] / diameter,
+                       315 - 2 * radius * dims[`hole_${i}_y`] / diameter,
+                       radius * size / diameter);
+    }
+  } else if (state.kind === 'stepped_shaft') {
+    c.fillText('Perfil lateral do eixo', 48, 36);
+    const total = dims.shaft_length, unit = 460 / total, center = 300;
+    const middle = total - 2 * (dims.end_length + dims.shoulder_length);
+    const sections = [
+      [dims.end_length, dims.end_diameter], [dims.shoulder_length, dims.shoulder_diameter],
+      [middle, dims.center_diameter],
+      [dims.shoulder_length, dims.shoulder_diameter], [dims.end_length, dims.end_diameter],
+    ];
+    let x = 70;
+    for (const [length, diameter] of sections) {
+      const w = length * unit, h = diameter * 2;
+      c.strokeRect(x, center - h / 2, w, h);
+      x += w;
+    }
+    c.setLineDash([8, 8]);  // linha de centro
+    c.beginPath(); c.moveTo(60, center); c.lineTo(540, center); c.stroke();
+    c.setLineDash([]);
+  } else if (state.kind === 'exercise32') {
+    c.fillText('Vista superior simplificada', 48, 36);
+    c.strokeRect(70, 210, 460, 200);
+    circle(300, 310, 74);
+    for (const x of [125, 475]) for (const y of [260, 360]) circle(x, y, 14);
+  } else {
+    ui.showSketch.disabled = true;
+    return;
+  }
+  ui.showSketch.disabled = false;
+}
+
+/* =========================================================================
+   Geração do modelo a partir das cotas
+   ========================================================================= */
+function values() {
+  const result = { kind: state.kind };
+  if (state.geometry) result.geometry = state.geometry;
+  for (const input of ui.fields.querySelectorAll('input')) result[input.dataset.key] = Number(input.value);
+  return result;
+}
+
+async function model() {
+  const response = await fetch('/api/modelo-stl', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(values()),
+  });
+  if (!response.ok) throw Error((await readJson(response)).error);
+  return response.arrayBuffer();
+}
+
+async function showStl(data) {
+  const result = await parseStl(data, progress);
+  mesh = {
+    triangles: result.triangles,
+    min: result.minimum,
+    max: result.maximum,
+    center: result.minimum.map((v, i) => (v + result.maximum[i]) / 2),
+  };
+  state.currentStl = result.data;
+  ui.send.disabled = false;
+  document.getElementById('emptyHint')?.remove();
+  setStep(2);
+  scheduleRender();
+  return result;
+}
+
+let updating = false;
+async function update() {
+  if (updating) return;  // evita gerar duas prévias ao mesmo tempo
+  updating = true;
+  progress('Gerando modelo 3D');
+  try {
+    setStatus('Gerando a peça…');
+    const result = await showStl(await model());
+    setStatus(`Modelo preliminar pronto (${formatCount(result.count)} triângulos) em ${seconds(state.imageStarted)} s. Confira as cotas antes de fabricar.`);
+  } catch (error) {
+    setStatus(error.message);
+  } finally {
+    finishProgress();
+    updating = false;
+  }
+}
+$('#update').onclick = update;
+
+$('#download').onclick = async () => {
+  try {
+    saveFile(await model(), `${state.sourceName || 'mensula-3de'}.stl`, 'model/stl');
+  } catch (error) {
+    setStatus(error.message);
+  }
+};
+
+/* =========================================================================
+   Abertura de malhas STL (lidas no próprio navegador)
+   ========================================================================= */
+async function handleCad(selected) {
+  const started = performance.now();
+  const extension = selected.name.split('.').pop().toLowerCase();
+  ui.send.disabled = true;
+  state.currentProjectUrl = null;
+  progress('Abrindo modelo CAD');
+  try {
+    ui.stage.classList.remove('has-image');
+    ui.section.style.display = 'none';
+    ui.ocrPanel.style.display = 'none';
+    if (extension !== 'stl') throw Error('Envie uma malha STL. Modelos de outros programas CAD podem ser exportados como STL.');
+    if (selected.size > 80_000_000) throw Error('O arquivo deve ter até 80 MB.');
+    const result = await showStl(await selected.arrayBuffer());
+    state.sourceName = baseName(selected.name);
+    setStatus(`${selected.name}: ${formatCount(result.count)} triângulos carregados; ` +
+      `${formatCount(result.previewCount)} na prévia. Tempo: ${seconds(started)} s. ` +
+      'Envie ao projeto para medir, cortar em seção e exportar no editor.');
+  } catch (error) {
+    state.currentProjectUrl = null;
+    setStatus(error.message);
+  } finally {
+    finishProgress();
+  }
+}
+ui.cadFile.onchange = event => event.target.files[0] && handleCad(event.target.files[0]);
+
+/* Arrastar e soltar arquivos nas áreas de envio */
+for (const [input, handler] of [[ui.file, handleDrawing], [ui.cadFile, handleCad]]) {
+  const box = input.closest('.box');
+  box.addEventListener('dragover', event => { event.preventDefault(); box.classList.add('dragover'); });
+  box.addEventListener('dragleave', () => box.classList.remove('dragover'));
+  box.addEventListener('drop', event => {
+    event.preventDefault();
+    box.classList.remove('dragover');
+    const dropped = event.dataTransfer.files[0];
+    if (dropped) handler(dropped);
+  });
+}
+
+/* =========================================================================
+   Envio ao editor 3D
+   ========================================================================= */
+ui.send.onclick = async () => {
+  if (!state.currentStl) return;
+  if (state.currentProjectUrl) {
+    location.href = '/?open=' + encodeURIComponent(state.currentProjectUrl);
+    return;
+  }
+  ui.send.disabled = true;
+  setStep(3);
+  setStatus('Criando recursos editáveis no projeto…');
+  try {
+    const name = encodeURIComponent(state.sourceName);
+    const editable = ui.section.style.display === 'block';
+    // Peça reconhecida -> projeto com recursos editáveis; STL avulso -> malha.
+    const response = editable
+      ? await fetch('/api/modelo-projeto?name=' + name, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values()),
+        })
+      : await fetch('/api/transferir-modelo?name=' + name, {
+          method: 'POST', headers: { 'Content-Type': 'model/stl' }, body: state.currentStl,
+        });
+    const result = await readJson(response);
+    if (!response.ok) throw Error(result.error || 'Não foi possível transferir a peça.');
+    location.href = '/?open=' + encodeURIComponent(result.url);
+  } catch (error) {
+    setStatus(error.message);
+    ui.send.disabled = false;
+  }
+};
+
+/* =========================================================================
+   Prévia 3D: rasterização por software com z-buffer
+   ========================================================================= */
+/** Gira um vetor pela câmera (rotação em Z e depois em X). */
+function rotate([x, y, z]) {
+  const ca = Math.cos(camera.rz), sa = Math.sin(camera.rz);
+  const cb = Math.cos(camera.rx), sb = Math.sin(camera.rx);
+  const xx = x * ca - y * sa, yy = x * sa + y * ca;
+  return [xx, yy * cb - z * sb, yy * sb + z * cb];  // [direita, cima, em direção ao observador]
+}
+
+function project(p) {
+  return rotate([p[0] - mesh.center[0], p[1] - mesh.center[1], p[2] - mesh.center[2]]);
+}
+
+// Luz vinda de cima e da esquerda, em coordenadas da câmera.
+const LIGHT = (() => { const v = [-.35, .5, .8], n = Math.hypot(...v); return v.map(x => x / n); })();
+
+let renderQueued = false;
+/** Agenda um único desenho por quadro (evita travar ao girar a peça). */
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; render(); });
+}
+
+function render() {
+  const rect = ui.view.getBoundingClientRect(), quality = .85;
+  const width = ui.view.width = Math.max(1, Math.round(rect.width * quality));
+  const height = ui.view.height = Math.max(1, Math.round(rect.height * quality));
+  const picture = ctx.createImageData(width, height), pixels = picture.data;
+  const depth = new Float32Array(width * height).fill(-Infinity);
+  // Fundo em degradê azul-grafite (o mesmo clima da área 3D do editor).
+  for (let row = 0; row < height; row++) {
+    const t = row / height, r = 24 - 13 * t, g = 33 - 18 * t, b = 51 - 29 * t;
+    for (let i = row * width * 4, end = i + width * 4; i < end; i += 4) {
+      pixels[i] = r; pixels[i + 1] = g; pixels[i + 2] = b; pixels[i + 3] = 255;
+    }
+  }
+
+  // Escala para a caixa envolvente ocupar ~78% da área visível.
+  const corners = [];
+  for (const x of [mesh.min[0], mesh.max[0]])
+    for (const y of [mesh.min[1], mesh.max[1]])
+      for (const z of [mesh.min[2], mesh.max[2]]) corners.push(project([x, y, z]));
+  const span = axis => Math.max(1, Math.max(...corners.map(p => p[axis])) - Math.min(...corners.map(p => p[axis])));
+  const scale = Math.min(width * .78 / span(0), height * .78 / span(1)) * camera.zoom;
+  const cx = width / 2, cy = height / 2;
+
+  for (const triangle of mesh.triangles) {
+    const points = triangle.points.map(project);
+    const x = points.map(p => cx + p[0] * scale), y = points.map(p => cy - p[1] * scale), z = points.map(p => p[2]);
+    const area = (x[1] - x[0]) * (y[2] - y[0]) - (y[1] - y[0]) * (x[2] - x[0]);
+    if (Math.abs(area) < .001) continue;
+    const left = Math.max(0, Math.floor(Math.min(...x))), right = Math.min(width - 1, Math.ceil(Math.max(...x)));
+    const top = Math.max(0, Math.floor(Math.min(...y))), bottom = Math.min(height - 1, Math.ceil(Math.max(...y)));
+    if (left > right || top > bottom) continue;  // fora da tela
+
+    // Sombreamento difuso que acompanha a rotação da câmera.
+    const n = rotate(triangle.normal);
+    const light = .3 + .7 * Math.abs(n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2]);
+    // Cor de aço, como as peças no editor.
+    const r = Math.round(182 * light * 1.12), g = Math.round(191 * light * 1.12), b = Math.round(204 * light * 1.12);
+
+    for (let py = top; py <= bottom; py++) {
+      for (let px = left; px <= right; px++) {
+        // Coordenadas baricêntricas do centro do pixel.
+        const a = ((x[1] - px - .5) * (y[2] - py - .5) - (y[1] - py - .5) * (x[2] - px - .5)) / area;
+        const bb = ((x[2] - px - .5) * (y[0] - py - .5) - (y[2] - py - .5) * (x[0] - px - .5)) / area;
+        const cc = 1 - a - bb;
+        if (a < 0 || bb < 0 || cc < 0) continue;
+        const index = py * width + px, near = a * z[0] + bb * z[1] + cc * z[2];
+        if (near <= depth[index]) continue;  // z-buffer: já há algo mais próximo
+        depth[index] = near;
+        const color = index * 4;
+        pixels[color] = Math.min(255, r); pixels[color + 1] = Math.min(255, g); pixels[color + 2] = Math.min(255, b);
+      }
+    }
+  }
+  ctx.putImageData(picture, 0, 0);
+}
+
+/* Controles da câmera */
+ui.view.onpointerdown = event => {
+  camera.drag = [event.clientX, event.clientY];
+  ui.view.setPointerCapture(event.pointerId);
+};
+ui.view.onpointermove = event => {
+  if (!camera.drag) return;
+  camera.rz += (event.clientX - camera.drag[0]) * .01;
+  camera.rx += (event.clientY - camera.drag[1]) * .01;
+  camera.drag = [event.clientX, event.clientY];
+  scheduleRender();
+};
+ui.view.onpointerup = ui.view.onpointercancel = () => { camera.drag = null; };
+ui.view.addEventListener('wheel', event => {
+  event.preventDefault();
+  camera.zoom = Math.min(8, Math.max(.2, camera.zoom * Math.exp(-event.deltaY * .0015)));
+  scheduleRender();
+}, { passive: false });
+ui.view.ondblclick = () => { Object.assign(camera, DEFAULT_CAMERA); scheduleRender(); };
+
+new ResizeObserver(scheduleRender).observe(ui.view);
+scheduleRender();
+</script>
+</body>
+</html>
