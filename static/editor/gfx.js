@@ -88,44 +88,9 @@ void main(){
   vec3 v=uOrtho==1 ? -uViewDir : normalize(uEye-vPos);
   if(uTwoSide==1 && dot(n,v)<0.0) n=-n;          // superfícies: os dois lados são visíveis
   float head=max(dot(n,v),0.0);
-  // Textura do material (procedural, no espaço da peça em mm).
-  vec3 base=uColor; float rough=uRough;
-  vec3 q=vPos*uTexScale;
-  if(uTex==1){
-    // Metal escovado: riscos finos numa direção da face.
-    vec3 a=abs(n.x)>0.8 ? vec3(0,1,0) : vec3(1,0,0);
-    vec3 t=normalize(cross(n,a));
-    float s=dot(q,t)*1.6;
-    float g=0.55*noise(vec3(s,dot(q,a)*0.05,0.0))+0.45*noise(vec3(s*3.1,0.0,dot(q,a)*0.12));
-    base*=0.78+0.36*g; rough=clamp(rough+0.25*(g-0.5),0.05,1.0);
-  } else if(uTex==2){
-    // Ferro fundido / borracha: granulado irregular.
-    float g=0.6*noise(q*0.9)+0.4*noise(q*2.6);
-    base*=0.72+0.45*g; rough=clamp(rough+0.25*(g-0.5),0.05,1.0);
-  } else if(uTex==3){
-    // Plástico texturizado: pontinhos suaves.
-    float g=noise(q*1.4);
-    base*=0.9+0.14*g;
-  }
-  // Luz de estúdio: céu e chão, luz principal, luz de preenchimento e reflexo do ambiente.
-  vec3 amb=mix(vec3(0.16,0.165,0.18),vec3(0.40,0.43,0.48),0.5+0.5*n.z);
-  float kd=max(dot(n,uKey),0.0), fd=max(dot(n,uFill),0.0);
-  vec3 diffuse=base*(amb+vec3(1.0,0.97,0.92)*kd*0.78+vec3(0.75,0.82,1.0)*fd*0.26)*(1.0-uMetal*0.35);
-  vec3 h=normalize(uKey+v);
-  float shin=mix(160.0,10.0,rough);
-  float spec=pow(max(dot(n,h),0.0),shin)*mix(1.4,0.25,rough);
-  vec3 F0=mix(vec3(0.045),base,uMetal);
-  float fres=pow(1.0-head,5.0);
-  vec3 F=F0+(vec3(1.0)-F0)*fres*(1.0-rough*0.85);
-  vec3 r=reflect(-v,n);
-  // Estúdio: chão cinza, horizonte claro, teto branco e duas caixas de luz.
-  vec3 env=mix(vec3(0.32,0.33,0.36),vec3(0.80,0.83,0.88),smoothstep(-0.35,0.05,r.z));
-  env=mix(env,vec3(1.0),smoothstep(0.25,0.85,r.z));
-  env+=vec3(0.9)*smoothstep(0.88,0.98,r.z);
-  env+=vec3(0.7,0.75,0.85)*smoothstep(0.8,0.96,dot(r,normalize(uKey)));
-  vec3 c=diffuse+env*F*mix(1.0,0.45,rough)*(0.35+0.75*uMetal)+F*spec;
-  c+=vec3(0.05,0.06,0.08)*pow(1.0-head,3.0);                         // contorno de luz
-  c=c/(1.0+0.12*c);
+  // Sombreamento CAD liso (sem textura procedural, que serrilhava a face).
+  float sky=0.5+0.5*n.z;
+  vec3 c=uColor*(0.24+0.16*sky+0.5*head)+vec3(0.06)*pow(head,24.0);
   if(uMode==1){
     // Zebra: listras refletidas de um céu listrado mostram a continuidade entre faces.
     vec3 r=reflect(-v,n);

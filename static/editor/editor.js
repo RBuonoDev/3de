@@ -1083,35 +1083,44 @@ function pointerToSketch(px, py) {
 }
 function snapPoint(p) {
   const tol = cam.mmPerPixel() * 8, s = sk();
-  const cands = [[0, 0], ...s.temp];
+  // Pontos de encaixe com o nome que aparece ao lado do cursor.
+  const cands = [{ p: [0, 0], label: 'Origem' }, ...s.temp.map(q => ({ p: q, label: 'Ponto final' }))];
+  const add = (q, label) => cands.push({ p: q, label });
+  const mids = (pts, closed) => { for (let i = 0; i < pts.length - (closed ? 0 : 1); i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; add([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], 'Ponto médio'); } };
   for (const e of s.draft.entities) {
-    if (e.type === 'rect') cands.push(e.p0, e.p1, [e.p0[0], e.p1[1]], [e.p1[0], e.p0[1]]);
-    if (e.c) cands.push(e.c);
-    if (e.c1) cands.push(e.c1, e.c2);
-    if (e.p3) cands.push(e.p1, e.p3);
-    if (e.type === 'poly' || e.type === 'path') cands.push(...e.pts);
-    if (e.type === 'polygon') cands.push(...entityPoints(e).pts);
+    if (e.type === 'rect' || e.type === 'rrect') { const c4 = [e.p0, [e.p1[0], e.p0[1]], e.p1, [e.p0[0], e.p1[1]]]; c4.forEach(q => add(q, 'Ponto final')); mids(c4, true); add([(e.p0[0] + e.p1[0]) / 2, (e.p0[1] + e.p1[1]) / 2], 'Centro'); }
+    if (e.c) add(e.c, 'Centro');
+    if (e.type === 'circle') [[1, 0], [0, 1], [-1, 0], [0, -1]].forEach(([a, b]) => add([e.c[0] + a * e.d / 2, e.c[1] + b * e.d / 2], 'Quadrante'));
+    if (e.c1) { add(e.c1, 'Centro'); add(e.c2, 'Centro'); }
+    if (e.p3) { add(e.p1, 'Ponto final'); add(e.p3, 'Ponto final'); }
+    if (e.type === 'poly' || e.type === 'path') { e.pts.forEach(q => add(q, 'Ponto final')); mids(e.pts, e.type === 'poly'); }
+    if (e.type === 'polygon') entityPoints(e).pts.forEach(q => add(q, 'Vértice'));
   }
-  s.guides = [];
-  for (const c of cands) if (Math.hypot(c[0] - p[0], c[1] - p[1]) < tol) return [c[0], c[1]];
+  s.guides = []; s.snap = null;
+  let best = null, bestD = tol;
+  for (const c of cands) { const dd = Math.hypot(c.p[0] - p[0], c.p[1] - p[1]); if (dd < bestD) { bestD = dd; best = c; } }
+  if (best) { s.snap = { p: [best.p[0], best.p[1]], label: best.label }; return [best.p[0], best.p[1]]; }
   const mpp = cam.mmPerPixel(), step = mpp > 1.5 ? 5 : mpp > 0.4 ? 1 : 0.5;
   const grid = (v) => Math.round(v / step) * step;
   if (!state.snapAlign) return [grid(p[0]), grid(p[1])];
-  // Inferência de alinhamento: perto de 0°/180° a linha fica horizontal, perto de 90°
-  // fica vertical (em relação ao último ponto); perto da coluna ou da linha de outro
-  // ponto, alinha com ele. O ângulo de captura é de uns 5° ou 8 pixels.
+  // Inferência de alinhamento a partir do último ponto: perto de 0°/180° fica
+  // horizontal, perto de 90°/270° vertical e perto de 45° fica na diagonal.
   let x = p[0], y = p[1], lockX = false, lockY = false;
   const ref = s.temp.at(-1);
-  const flipLabel = flip() < 0 ? -1 : 1;
   if (ref) {
     const dx = p[0] - ref[0], dy = p[1] - ref[1], len = Math.hypot(dx, dy), near = Math.max(tol, len * Math.tan((5 * Math.PI) / 180));
-    if (len > tol && Math.abs(dy) < near && Math.abs(dy) <= Math.abs(dx)) { y = ref[1]; lockY = true; s.guides.push({ from: ref, label: dx >= 0 ? 'Horizontal 0°' : 'Horizontal 180°' }); }
-    else if (len > tol && Math.abs(dx) < near) { x = ref[0]; lockX = true; s.guides.push({ from: ref, label: dy * flipLabel >= 0 ? 'Vertical 90°' : 'Vertical 270°' }); }
+    if (len > tol && Math.abs(dy) < near && Math.abs(dy) <= Math.abs(dx)) { y = ref[1]; lockY = true; s.guides.push({ from: ref, label: 'Horizontal' }); }
+    else if (len > tol && Math.abs(dx) < near) { x = ref[0]; lockX = true; s.guides.push({ from: ref, label: 'Vertical' }); }
+    else if (len > tol && Math.abs(Math.abs(dx) - Math.abs(dy)) < near) {
+      const L = grid((Math.abs(dx) + Math.abs(dy)) / 2);
+      s.guides.push({ from: ref, label: '45°' });
+      return [ref[0] + Math.sign(dx) * L, ref[1] + Math.sign(dy) * L];
+    }
   }
   for (const c of cands) {
-    if (c === ref) continue;
-    if (!lockX && Math.abs(c[0] - p[0]) < tol) { x = c[0]; lockX = true; s.guides.push({ from: c, label: 'Alinhado na vertical' }); }
-    if (!lockY && Math.abs(c[1] - p[1]) < tol) { y = c[1]; lockY = true; s.guides.push({ from: c, label: 'Alinhado na horizontal' }); }
+    if (c.p === ref) continue;
+    if (!lockX && Math.abs(c.p[0] - p[0]) < tol) { x = c.p[0]; lockX = true; s.guides.push({ from: c.p, label: 'Alinhado' }); }
+    if (!lockY && Math.abs(c.p[1] - p[1]) < tol) { y = c.p[1]; lockY = true; s.guides.push({ from: c.p, label: 'Alinhado' }); }
   }
   return [lockX ? x : grid(x), lockY ? y : grid(y)];
 }
@@ -1138,13 +1147,20 @@ function drawSketchLines() {
   // Grade infinita no plano do esboço, por cima das peças.
   const o = sketchWorld(0, 0), u = v3.sub(sketchWorld(1, 0), o), v = v3.sub(sketchWorld(0, 1), o);
   gfx.grid = { origin: o, u, v, colorU: axisColor(u), colorV: axisColor(v), tint: THEMES[prefs.theme].sketchGrid, alpha: 0.22, onTop: true };
+  // Cores do esboço: azul (geometria), amarelo (selecionada), laranja (sob o cursor e construção).
+  const mpp = cam.mmPerPixel();
+  const dot = (q, col, r = 3) => gfx.addLines([...sketchWorld(q[0] - r * mpp, q[1] - r * mpp), ...sketchWorld(q[0] + r * mpp, q[1] - r * mpp), ...sketchWorld(q[0] + r * mpp, q[1] - r * mpp), ...sketchWorld(q[0] + r * mpp, q[1] + r * mpp),
+    ...sketchWorld(q[0] + r * mpp, q[1] + r * mpp), ...sketchWorld(q[0] - r * mpp, q[1] + r * mpp), ...sketchWorld(q[0] - r * mpp, q[1] + r * mpp), ...sketchWorld(q[0] - r * mpp, q[1] - r * mpp)], col, { depth: false });
   d.entities.forEach((e, i) => {
-    const col = i === s.sel ? [1, 0.7, 0.28, 1] : e.construction ? [1, 0.6, 0.3, 0.75] : [0.45, 0.7, 1, 1], { pts, closed } = entityPoints(e, 72);
+    const col = i === s.sel ? SK.sel : i === s.hover ? SK.hover : e.construction ? SK.constr : SK.line, { pts, closed } = entityPoints(e, 72);
     gfx.addLines(e.construction ? dashed(closed ? [...pts, pts[0]] : pts) : loopSegments(pts, closed), col, { depth: false });
+    for (const q of entityVertices(e)) dot(q, col, 2.5);
   });
+  drawSketchDims();
   const c = s.cursor, t = s.temp;
+  for (const q of t) dot(q, SK.preview, 2.5);
   if (c && t.length) {
-    const green = [0.4, 0.9, 0.55, 1];
+    const green = SK.preview;
     const prev = previewEntity(s.tool, t, c);
     if (prev) {
       const { pts, closed } = entityPoints(prev, 72);
@@ -1154,23 +1170,156 @@ function drawSketchLines() {
       crect: () => `${fmt(2 * Math.abs(c[0] - t[0][0]))} × ${fmt(2 * Math.abs(c[1] - t[0][1]))} mm`, circle: () => `Ø ${fmt(2 * Math.hypot(c[0] - t[0][0], c[1] - t[0][1]))} mm`,
       ellipse: () => `${fmt(2 * Math.abs(c[0] - t[0][0]))} × ${fmt(2 * Math.abs(c[1] - t[0][1]))} mm`, polygon: () => `R ${fmt(Math.hypot(c[0] - t[0][0], c[1] - t[0][1]))} mm`,
       slot: () => (t.length === 1 ? `${fmt(Math.hypot(c[0] - t[0][0], c[1] - t[0][1]))} mm` : `largura ${fmt(prev?.w || 0)} mm`),
-      poly: () => `${fmt(Math.hypot(c[0] - t.at(-1)[0], c[1] - t.at(-1)[1]))} mm`, path: () => `${fmt(Math.hypot(c[0] - t.at(-1)[0], c[1] - t.at(-1)[1]))} mm`,
+      poly: () => lineLabel(t.at(-1), c), path: () => lineLabel(t.at(-1), c),
       arc: () => (t.length === 1 ? `corda ${fmt(Math.hypot(c[0] - t[0][0], c[1] - t[0][1]))} mm` : 'ponto do arco') }[s.tool];
     if (label) tag(sketchWorld(...c), label(), 'sketch');
   }
   if (c) {
-    const r = cam.mmPerPixel() * 5;
-    gfx.addLines([...sketchWorld(c[0] - r, c[1]), ...sketchWorld(c[0] + r, c[1]), ...sketchWorld(c[0], c[1] - r), ...sketchWorld(c[0], c[1] + r)], [0.4, 0.9, 0.55, 1], { depth: false });
-    // Guias de alinhamento: linhas tracejadas até o ponto que deixou a linha reta.
-    const guideCol = [1, 0.78, 0.25, 1];
-    for (const g of s.guides || []) {
-      gfx.addLines(dashed([g.from, c]), guideCol, { depth: false });
-      const m = cam.mmPerPixel() * 4;
-      gfx.addLines([...sketchWorld(g.from[0] - m, g.from[1] - m), ...sketchWorld(g.from[0] + m, g.from[1] + m), ...sketchWorld(g.from[0] - m, g.from[1] + m), ...sketchWorld(g.from[0] + m, g.from[1] - m)], guideCol, { depth: false });
-    }
-    const kinds = [...new Set((s.guides || []).map(g => g.label))];
-    if (kinds.length) tag(sketchWorld(c[0], c[1]), kinds.join(' · '), 'pick snap');
+    const r = mpp * 5;
+    gfx.addLines([...sketchWorld(c[0] - r, c[1]), ...sketchWorld(c[0] + r, c[1]), ...sketchWorld(c[0], c[1] - r), ...sketchWorld(c[0], c[1] + r)], SK.preview, { depth: false });
+    // Encaixe: quadrado laranja no ponto e o nome dele; alinhamento: tracejado até a referência.
+    if (s.snap) dot(s.snap.p, SK.hover, 5);
+    for (const g of s.guides || []) gfx.addLines(dashed([g.from, c]), SK.hover, { depth: false });
+    const kinds = [...new Set([s.snap?.label, ...(s.guides || []).map(g => g.label)].filter(Boolean))];
+    if (kinds.length && s.tool !== 'select') tag(sketchWorld(c[0], c[1]), kinds.join(' · '), 'pick snap');
   }
+}
+const SK = { line: [0.44, 0.74, 0.93, 1], sel: [0.95, 0.79, 0.49, 1], hover: [0.96, 0.65, 0.35, 1], constr: [1, 0.6, 0.3, 0.75], preview: [0.45, 0.87, 0.69, 1], dim: [0.5, 0.88, 0.76, 1] };
+/** Comprimento e ângulo do segmento que está sendo desenhado. */
+function lineLabel(a, b) {
+  const d = toDisplay([b[0] - a[0], b[1] - a[1]]), ang = ((Math.atan2(d[1], d[0]) * 180) / Math.PI + 360) % 360;
+  return `${fmt(Math.hypot(d[0], d[1]))} mm · ${fmt(Math.round(ang * 10) / 10)}° (digite para medir)`;
+}
+/** Vértices visíveis de cada entidade (pontinhos, como no esboço antigo). */
+function entityVertices(e) {
+  if (e.type === 'rect' || e.type === 'rrect') return [e.p0, [e.p1[0], e.p0[1]], e.p1, [e.p0[0], e.p1[1]]];
+  if (e.type === 'poly' || e.type === 'path') return e.pts;
+  if (e.type === 'arc') return [e.p1, e.p3];
+  if (e.type === 'slot') return [e.c1, e.c2];
+  if (e.c) return [e.c];
+  return [];
+}
+
+/* ---- Cotas do esboço: medidas que ficam no desenho e mudam a geometria ---- */
+/** Medida que a cota mostra e como aplicar um valor novo. */
+function dimAccess(e, dm) {
+  if (!e) return null;
+  if ((e.type === 'rect' || e.type === 'rrect') && (dm.k === 'w' || dm.k === 'h')) {
+    const i = dm.k === 'w' ? 0 : 1;
+    return { value: Math.abs(e.p1[i] - e.p0[i]), set: (v) => { e.p1[i] = e.p0[i] + Math.sign(e.p1[i] - e.p0[i] || 1) * v; } };
+  }
+  if (e.type === 'circle') return { value: e.d, set: (v) => { e.d = v; }, prefix: 'Ø' };
+  if (e.type === 'polygon') return { value: e.r, set: (v) => { e.r = v; }, prefix: 'R' };
+  if (e.type === 'rrect' && dm.k === 'r') return { value: e.r, set: (v) => { e.r = v; }, prefix: 'R' };
+  if (e.type === 'slot') return { value: e.w, set: (v) => { e.w = v; }, prefix: 'L ' };
+  if ((e.type === 'poly' || e.type === 'path') && dm.k === 'seg') {
+    const n = e.pts.length, a = e.pts[dm.seg], bi = (dm.seg + 1) % n, b = e.pts[bi];
+    if (!a || !b) return null;
+    return { value: Math.hypot(b[0] - a[0], b[1] - a[1]), set: (v) => {
+      // O ponto final anda na direção do segmento; os pontos seguintes acompanham (a forma não se deforma).
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L, dx = ux * (v - L), dy = uy * (v - L);
+      const last = e.type === 'poly' ? (bi === 0 ? -1 : n - 1) : n - 1;
+      if (bi === 0) { e.pts[0] = [b[0] + dx, b[1] + dy]; return; }
+      for (let k = bi; k <= last; k++) e.pts[k] = [e.pts[k][0] + dx, e.pts[k][1] + dy];
+    } };
+  }
+  return null;
+}
+/** Segmento onde a cota é desenhada (em coordenadas do esboço). */
+function dimSegment(e, dm) {
+  if (e.type === 'rect' || e.type === 'rrect') {
+    const x0 = Math.min(e.p0[0], e.p1[0]), x1 = Math.max(e.p0[0], e.p1[0]), y0 = Math.min(e.p0[1], e.p1[1]), y1 = Math.max(e.p0[1], e.p1[1]);
+    return dm.k === 'w' ? [[x0, y0], [x1, y0], -1] : [[x0, y0], [x0, y1], 1];
+  }
+  if (e.type === 'poly' || e.type === 'path') return [e.pts[dm.seg], e.pts[(dm.seg + 1) % e.pts.length], 1];
+  return null;
+}
+function drawSketchDims() {
+  const s = sk(), d = s.draft, mpp = cam.mmPerPixel();
+  d.dims = (d.dims || []).filter(dm => dimAccess(d.entities[dm.e], dm));
+  for (const dm of d.dims) {
+    const e = d.entities[dm.e], acc = dimAccess(e, dm), seg = dimSegment(e, dm), text = `${acc.prefix || ''}${fmt(acc.value)}`;
+    if (!seg) { tag(sketchWorld(...(e.c || e.c1)), text, 'dim'); continue; }
+    // Linha de cota afastada da aresta, com linhas de chamada e pequenas marcas nas pontas.
+    const [a, b, side] = seg, L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = (-(b[1] - a[1]) / L) * side, ny = ((b[0] - a[0]) / L) * side, off = mpp * 22, ext = mpp * 4, tk = mpp * 5;
+    const A = [a[0] + nx * off, a[1] + ny * off], B = [b[0] + nx * off, b[1] + ny * off];
+    const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+    gfx.addLines([...sketchWorld(a[0] + nx * mpp * 3, a[1] + ny * mpp * 3), ...sketchWorld(A[0] + nx * ext, A[1] + ny * ext),
+      ...sketchWorld(b[0] + nx * mpp * 3, b[1] + ny * mpp * 3), ...sketchWorld(B[0] + nx * ext, B[1] + ny * ext), ...sketchWorld(...A), ...sketchWorld(...B),
+      ...sketchWorld(A[0] + (ux + nx) * tk * 0.5, A[1] + (uy + ny) * tk * 0.5), ...sketchWorld(A[0] - (ux + nx) * tk * 0.5, A[1] - (uy + ny) * tk * 0.5),
+      ...sketchWorld(B[0] + (ux + nx) * tk * 0.5, B[1] + (uy + ny) * tk * 0.5), ...sketchWorld(B[0] - (ux + nx) * tk * 0.5, B[1] - (uy + ny) * tk * 0.5)], SK.dim, { depth: false });
+    tag(sketchWorld((A[0] + B[0]) / 2, (A[1] + B[1]) / 2), text, 'dim');
+  }
+}
+/** Qual medida da entidade o clique da ferramenta Cota escolhe. */
+function dimFor(i, p) {
+  const e = sk().draft.entities[i];
+  if (e.type === 'rect' || e.type === 'rrect') {
+    const x0 = Math.min(e.p0[0], e.p1[0]), x1 = Math.max(e.p0[0], e.p1[0]), y0 = Math.min(e.p0[1], e.p1[1]), y1 = Math.max(e.p0[1], e.p1[1]);
+    const dh = Math.min(Math.abs(p[1] - y0), Math.abs(p[1] - y1)), dv = Math.min(Math.abs(p[0] - x0), Math.abs(p[0] - x1));
+    return { e: i, k: dh <= dv ? 'w' : 'h' };
+  }
+  if (e.type === 'poly' || e.type === 'path') {
+    let best = 0, bestD = Infinity;
+    const n = e.pts.length;
+    for (let k = 0; k < n - (e.type === 'poly' ? 0 : 1); k++) {
+      const a = e.pts[k], b = e.pts[(k + 1) % n], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)), dd = Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+      if (dd < bestD) { bestD = dd; best = k; }
+    }
+    return { e: i, k: 'seg', seg: best };
+  }
+  return { e: i, k: 'main' };
+}
+/** Caixinha para digitar um valor perto do cursor. Enter aplica, Esc cancela. */
+function askValue(px, py, initial, hint, onSet, selectAll = true) {
+  $('#valueBox')?.remove();
+  const input = h('input', { id: 'valueBox', class: 'value-box', type: 'text', value: initial, title: hint, placeholder: hint });
+  input.style.left = `${px + 14}px`; input.style.top = `${py + 14}px`;
+  $('#overlay').parentElement.append(input);   // fora do overlay, que é limpo a cada redesenho
+  // O foco vem depois do clique terminar; senão o próprio clique tira o foco da caixa.
+  // Valor existente fica selecionado (digitar troca); um dígito já digitado fica com o cursor no fim.
+  // Pelo teclado o foco é imediato, para o próximo dígito já cair na caixa.
+  if (!selectAll) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+  else setTimeout(() => { input.focus(); input.select(); }, 30);
+  input.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();
+    if (ev.key === 'Escape') input.remove();
+    if (ev.key === 'Enter') { const txt = input.value.trim().replace(',', '.'); input.remove(); onSet(txt); }
+  });
+  input.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== input) input.remove(); }, 150));
+}
+function sketchDimClick(px, py, p) {
+  const s = sk(), d = s.draft, i = hitEntity(p);
+  if (i < 0) { setStatus('Cota: clique numa linha, aresta do retângulo ou círculo.', true); return; }
+  const dm = dimFor(i, p), acc = dimAccess(d.entities[i], dm);
+  if (!acc) { setStatus('Esta entidade não tem cota editável; use o painel de medidas.', true); return; }
+  d.dims = d.dims || [];
+  const old = d.dims.find(x => x.e === dm.e && x.k === dm.k && x.seg === dm.seg);
+  if (!old) d.dims.push(dm);
+  s.sel = i; renderSketchPM(); drawLines();
+  askValue(px, py, fmt(acc.value), 'Valor em mm', (txt) => {
+    const v = Number(txt);
+    if (!(v > 0)) { setStatus('Digite um valor maior que zero.', true); return; }
+    acc.set(v); renderSketchPM(); drawLines(); setStatus(`Cota aplicada: ${fmt(v)} mm.`);
+  });
+}
+/** Linha por medida: digitar "40" ou "40<30" (comprimento e ângulo) cria o próximo ponto. */
+function typeLineLength(first) {
+  const s = sk(), t = s.temp, ref = t.at(-1);
+  if (!ref) return;
+  const r = canvas.getBoundingClientRect(), last = lastPointer || [r.width / 2, r.height / 2];
+  askValue(last[0], last[1], first, 'comprimento ou comprimento<ângulo', (txt) => {
+    const m = txt.match(/^(\d+(?:\.\d+)?)\s*(?:<\s*(-?\d+(?:\.\d+)?))?$/);
+    if (!m) { setStatus('Use 40 (comprimento) ou 40<30 (comprimento e ângulo em graus).', true); return; }
+    const L = Number(m[1]);
+    if (!(L > 0)) { setStatus('O comprimento precisa ser maior que zero.', true); return; }
+    let dir;
+    if (m[2] !== undefined) { const a = (Number(m[2]) * Math.PI) / 180; dir = fromDisplay([Math.cos(a), Math.sin(a)]); }
+    else { const c = s.cursor || [ref[0] + 1, ref[1]], dx = c[0] - ref[0], dy = c[1] - ref[1], l = Math.hypot(dx, dy); dir = l > 1e-9 ? [dx / l, dy / l] : [1, 0]; }
+    t.push([r3(ref[0] + dir[0] * L), r3(ref[1] + dir[1] * L)]);
+    drawLines(); setStatus(`Segmento de ${fmt(L)} mm criado. Continue clicando, digite outra medida, ou Enter para terminar.`);
+  }, false);
 }
 /** Entidade que o clique seguinte criaria (prévia tracejada). */
 function previewEntity(tool, t, c) {
@@ -1243,7 +1392,9 @@ const TOOL_HELP = { select: 'Clique numa entidade para editar as medidas.', rect
   circle: 'Círculo: centro, depois um ponto da circunferência.', ellipse: 'Elipse: centro, depois um canto do retângulo que a contém.',
   polygon: 'Polígono: centro, depois um vértice (o número de lados fica no painel).', slot: 'Rasgo: centro 1, centro 2, depois a largura.',
   poly: 'Linha fechada: clique nos vértices; feche no primeiro ponto ou com Enter.', path: 'Linha aberta: clique nos vértices; Enter ou duplo clique termina.',
-  arc: 'Arco: início, fim, depois um ponto do arco.' };
+  arc: 'Arco: início, fim, depois um ponto do arco.', dim: 'Cota: clique numa linha, aresta ou círculo e digite a medida (Enter aplica).' };
+TOOL_HELP.poly = 'Linha: clique nos pontos em sequência, ou digite o comprimento (40) ou comprimento<ângulo (40<30). Clique no primeiro ponto para fechar; Enter termina.';
+TOOL_HELP.path = 'Linha aberta: clique nos pontos ou digite o comprimento (40<30 para dar o ângulo). Enter ou duplo clique termina.';
 function setTool(tool) {
   if (state.mode !== 'sketch') return;
   Object.assign(sk(), { tool, temp: [] });
@@ -1358,7 +1509,10 @@ function addEntity(e) { sk().draft.entities.push(e); sk().temp = []; renderSketc
 function deleteEntity() {
   const s = sk();
   if (!s || s.sel < 0) return;
-  s.draft.entities.splice(s.sel, 1); s.sel = -1; renderSketchPM(); drawLines();
+  const gone = s.sel;
+  s.draft.entities.splice(gone, 1); s.sel = -1;
+  s.draft.dims = (s.draft.dims || []).filter(dm => dm.e !== gone).map(dm => (dm.e > gone ? { ...dm, e: dm.e - 1 } : dm));
+  renderSketchPM(); drawLines();
 }
 function hitEntity(p) {
   const tol = cam.mmPerPixel() * 6;
@@ -1389,6 +1543,7 @@ function sketchClick(px, py) {
   const s = sk(), p = pointerToSketch(px, py);
   if (!p) return;
   if (s.tool === 'select') { s.sel = hitEntity(p); renderSketchPM(); drawLines(); return; }
+  if (s.tool === 'dim') { sketchDimClick(px, py, p); return; }
   const t = s.temp, far = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) > 1e-6;
   const two = ['rect', 'rrect', 'crect', 'circle', 'ellipse', 'polygon'];
   if (two.includes(s.tool)) {
@@ -1406,7 +1561,8 @@ function sketchClick(px, py) {
     else { const e = previewEntity(s.tool, t, p); if (s.tool === 'slot') e.w = r3(e.w); addEntity(e); }
   } else if (s.tool === 'poly' || s.tool === 'path') {
     const first = t[0];
-    if (s.tool === 'poly' && first && t.length >= 3 && Math.hypot(p[0] - first[0], p[1] - first[1]) < cam.mmPerPixel() * 8) closePolygon();
+    // Clicar de novo no primeiro ponto fecha o contorno (também na linha aberta).
+    if (first && t.length >= 3 && Math.hypot(p[0] - first[0], p[1] - first[1]) < cam.mmPerPixel() * 8) { s.tool = 'poly'; closePolygon(); s.tool = 'poly'; setStatus('Contorno fechado. Continue desenhando ou saia do esboço.'); }
     else if (!t.length || far(p, t.at(-1))) t.push(p);
   }
   drawLines();
@@ -1897,7 +2053,7 @@ const TABS = {
     [cmd('plane', 'Geometria de referência', offsetPlane), stack(cmd('params', 'Equações (parâmetros)', showParameters), cmd('table', 'Tabela de configurações', showConfigs))],
   ] },
   sketch: { label: 'Esboço', groups: [
-    [sketchButton, cmd('select', 'Selecionar', () => setTool('select'), inSketch, () => sk()?.tool === 'select')],
+    [sketchButton, stack(cmd('select', 'Selecionar', () => setTool('select'), inSketch, () => sk()?.tool === 'select'), tool('measure', 'Cota inteligente', 'dim'))],
     [tool('line', 'Linha', 'poly'), stack(tool('path', 'Linha aberta', 'path'), tool('arc', 'Arco', 'arc'), tool('slot', 'Rasgo', 'slot')),
       tool('rect', 'Retângulo', 'rect'), stack(tool('crect', 'Retângulo central', 'crect'), tool('rrect', 'Retângulo arredondado', 'rrect'), tool('polygon', 'Polígono', 'polygon')),
       tool('circle', 'Círculo', 'circle'), stack(tool('ellipse', 'Elipse', 'ellipse'))],
@@ -1953,9 +2109,9 @@ const THEMES = {
 };
 // Aparência e densidade juntas: escolher o material muda o visual e a massa calculada.
 const LOOKS = {
-  aco: { label: 'Aço (escovado)', color: [0.70, 0.72, 0.75], metal: 0.85, rough: 0.38, tex: 1, density: 7.85 },
-  inox: { label: 'Aço inox (polido)', color: [0.78, 0.79, 0.81], metal: 0.95, rough: 0.14, tex: 0, density: 7.9 },
-  aluminio: { label: 'Alumínio (escovado)', color: [0.84, 0.86, 0.89], metal: 0.82, rough: 0.3, tex: 1, density: 2.7 },
+  aco: { label: 'Aço', color: [0.70, 0.72, 0.75], metal: 0.85, rough: 0.38, tex: 1, density: 7.85 },
+  inox: { label: 'Aço inox', color: [0.78, 0.79, 0.81], metal: 0.95, rough: 0.14, tex: 0, density: 7.9 },
+  aluminio: { label: 'Alumínio', color: [0.84, 0.86, 0.89], metal: 0.82, rough: 0.3, tex: 1, density: 2.7 },
   ferro: { label: 'Ferro fundido', color: [0.40, 0.41, 0.43], metal: 0.45, rough: 0.8, tex: 2, density: 7.2 },
   latao: { label: 'Latão', color: [0.86, 0.69, 0.36], metal: 0.9, rough: 0.28, tex: 1, density: 8.5 },
   cobre: { label: 'Cobre', color: [0.86, 0.52, 0.36], metal: 0.9, rough: 0.3, tex: 0, density: 8.96 },
@@ -1963,7 +2119,7 @@ const LOOKS = {
   pla: { label: 'Plástico PLA azul', color: [0.22, 0.47, 0.88], metal: 0, rough: 0.38, tex: 0, density: 1.24 },
   nylon: { label: 'Náilon', color: [0.93, 0.91, 0.84], metal: 0, rough: 0.7, tex: 3, density: 1.14 },
   borracha: { label: 'Borracha', color: [0.13, 0.13, 0.14], metal: 0, rough: 0.92, tex: 2, density: 1.2 },
-  cinza: { label: 'Cinza CAD (sem textura)', color: [0.74, 0.77, 0.81], metal: 0.2, rough: 0.5, tex: 0, density: 7.85 },
+  cinza: { label: 'Cinza CAD', color: [0.74, 0.77, 0.81], metal: 0.2, rough: 0.5, tex: 0, density: 7.85 },
 };
 const prefs = { theme: 'dark', look: 'aco', edges: true, snapAlign: true, ortho: false };
 function loadPrefs() {
@@ -1994,7 +2150,7 @@ function showPreferences() {
   openProps('Preferências', [
     fieldset('Tema', h('div', { class: 'themes' }, Object.entries(THEMES).map(([k, t]) => card(k, t)))),
     fieldset('Material da peça', selectField('Aparência', prefs.look, Object.entries(LOOKS).map(([k, l]) => [k, l.label]), v => { prefs.look = v; savePrefs(); applyPrefs(); }),
-      h('p', { class: 'note' }, 'O material muda a cor, o brilho e a textura na vista 3D e a densidade usada em Propriedades de massa.')),
+      h('p', { class: 'note' }, 'O material muda a cor na vista 3D e a densidade usada em Propriedades de massa.')),
     fieldset('Vista', checkField('Mostrar arestas', gfx.edges, v => { gfx.edges = v; savePrefs(); requestRender(); }),
       checkField('Projeção ortográfica', cam.ortho, v => { cam.ortho = v; savePrefs(); drawLines(); })),
     fieldset('Esboço', checkField('Alinhamento automático (0°, 90°, 180°)', state.snapAlign, v => { state.snapAlign = v; savePrefs(); }),
@@ -2074,7 +2230,7 @@ function buildChrome() {
 /* =========================================================================
    Eventos da área 3D: girar, mover, aproximar, clicar
    ========================================================================= */
-let drag = null;
+let drag = null, lastPointer = null;
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('pointerdown', (e) => {
   drag = { x: e.clientX, y: e.clientY, button: e.button, moved: false };
@@ -2092,10 +2248,11 @@ canvas.addEventListener('pointermove', (e) => {
     return;
   }
   if (state.mode === 'sketch') {
-    const p = pointerToSketch(px, py);
-    sk().cursor = p;
+    const p = pointerToSketch(px, py), s = sk();
+    s.cursor = p; lastPointer = [px, py];
     if (p) { const d = toDisplay(p); $('#cursor').textContent = `${fmt(d[0])} ; ${fmt(d[1])} mm`; }
-    if (sk().tool !== 'select') drawLines();
+    const hov = p && (s.tool === 'select' || s.tool === 'dim') ? hitEntity(p) : -1;
+    if (s.tool !== 'select' || hov !== s.hover) { s.hover = hov; drawLines(); }
   } else if (state.mode === 'feature' && PICK_TYPES.includes(state.edit?.draft.type)) featureHover(px, py);
 });
 canvas.addEventListener('pointerup', (e) => {
@@ -2138,6 +2295,8 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { if (s.temp.length) { s.temp = []; drawLines(); } else setTool('select'); }
     else if (e.key === 'Enter') { if (['poly', 'path'].includes(s.tool) && s.temp.length) closePolygon(); else confirmSketch(); }
     else if (e.key === 'Delete') deleteEntity();
+    else if (/^[0-9.]$/.test(e.key) && ['poly', 'path'].includes(s.tool) && s.temp.length) { e.preventDefault(); typeLineLength(e.key); }
+    else if (k === 'd') setTool('dim');
     else if (k === 'r') setTool('rect'); else if (k === 'c') setTool('circle'); else if (k === 'l') setTool('poly');
     else if (k === 'a') setTool('arc'); else if (k === 'p') setTool('polygon'); else if (k === 'x') toggleConstruction();
     else if (k === 'o') sketchOp('offset'); else if (k === 'm') sketchOp('move');

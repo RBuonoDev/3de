@@ -112,7 +112,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .cmd.active { background: var(--accent-soft); border-color: var(--accent); }
 .cmd:disabled { opacity: .35; cursor: default; }
 .cmd:disabled [data-icon] { filter: grayscale(1); }
-.tag.snap { border-color: #ffc640; color: #ffd774; transform: translate(14px, 10px); font-size: 11px; }
+.tag.snap { border-color: #f4a658; color: #f4a658; transform: translate(14px, 10px); font-size: 11px; }
+.tag.dim { border-color: #80e1c3; color: #80e1c3; transform: translate(-50%, -50%); font-weight: 600; }
+.value-box { position: absolute; z-index: 5; width: 150px; padding: 4px 7px; font: 600 13px system-ui; color: var(--text); background: var(--panel-2);
+  border: 1px solid #80e1c3; border-radius: 6px; outline: none; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
 /* Escolha de tema nas preferências */
 .themes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 4px 0; }
 .theme-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 6px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel-2); text-align: left; }
