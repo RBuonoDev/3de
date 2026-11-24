@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gc
+import os
 import re
 from functools import lru_cache
 
@@ -9,10 +11,20 @@ import cv2
 import numpy as np
 
 
+# Hospedagem gratuita (Render, 512 MB): LOW_MEMORY=1 lê imagens menores, com uma
+# thread e sem a passada ampliada; a memória do OCR cresce com a área da imagem.
+LOW_MEMORY = os.environ.get("LOW_MEMORY", "").strip() not in ("", "0")
+MAX_SIDE = 1400 if LOW_MEMORY else 1800
+
+
 @lru_cache(maxsize=1)
 def _reader():
     from rapidocr import RapidOCR
 
+    if LOW_MEMORY:
+        return RapidOCR(params={"Global.max_side_len": MAX_SIDE, "Global.log_level": "warning",
+                                "EngineConfig.onnxruntime.intra_op_num_threads": 1,
+                                "EngineConfig.onnxruntime.inter_op_num_threads": 1})
     return RapidOCR()
 
 
@@ -36,7 +48,7 @@ def inspect_dimensions(data: bytes, result: dict) -> dict:
     image = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         return result
-    scale = min(1.0, 1800 / max(image.shape[:2]))
+    scale = min(1.0, MAX_SIDE / max(image.shape[:2]))
     if scale < 1:
         image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     try:
@@ -86,7 +98,7 @@ def inspect_dimensions(data: bytes, result: dict) -> dict:
                 if isinstance(value, (int, float))]
     missing = [value for value in expected
                if not any(abs(item["value"] - value) < .051 for item in found)]
-    if (missing or not result.get("recognized")) and max(image.shape[:2]) < 1600:
+    if (missing or not result.get("recognized")) and max(image.shape[:2]) < 1600 and not LOW_MEMORY:
         factor = min(1.7, 2200 / max(image.shape[:2]))
         try:
             enlarged = cv2.resize(image, None, fx=factor, fy=factor,
@@ -94,6 +106,7 @@ def inspect_dimensions(data: bytes, result: dict) -> dict:
             collect(_reader()(enlarged), enlarged.shape[0], enlarged.shape[1])
         except Exception:
             pass
+    gc.collect()   # devolve logo as matrizes grandes das imagens lidas
     result["ocr_readings"] = found[:80]
     result["ocr_message"] = (
         "Números detectados por OCR; a associação com cada dimensão ainda requer conferência."

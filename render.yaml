@@ -12,6 +12,11 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.10
+      # Plano gratuito tem 512 MB: o OCR lê imagens menores e com uma thread.
+      - key: LOW_MEMORY
+        value: "1"
+      - key: OMP_NUM_THREADS
+        value: "1"
       # Connection string do Supabase (PostgreSQL). O Render pede o valor na criação;
       # use a do "Session pooler" (porta 5432). Sem ela o site guarda tudo em memória.
       - key: DATABASE_URL
