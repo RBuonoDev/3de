@@ -619,7 +619,14 @@ function startFeature(type, shape) {
   const box = () => modelBox() || { min: [0, 0, 0], max: [0, 0, 0] };
   const base = (t, extra) => ({ id: newId(), type: t, name: nextName(FEATURE_PREFIX[t]), ...extra });
   const simple = {
-    sweep: () => needSketches(2, 'A varredura') && base('sweep', { profile: sketchList().find(s => s.id !== pathSketch().id)?.id, path: pathSketch().id, operation: state.bodies.length ? 'join' : 'new' }),
+    sweep: () => {
+      // Caminho: esboço com linha aberta ou arco. Perfil: outro esboço com contorno fechado.
+      if (!needSketches(2, 'A varredura')) return null;
+      const path = sketchList().filter(s => sketchPaths(s).length).at(-1);
+      const profile = sketchList().filter(s => s !== path && sketchLoops(s).length).at(-1);
+      if (!path || !profile) { setStatus('A varredura precisa de um esboço com contorno fechado (perfil) e outro com linha aberta ou arco (caminho).', true); return null; }
+      return base('sweep', { profile: profile.id, path: path.id, operation: state.bodies.length ? 'join' : 'new' });
+    },
     pipe: () => {
       // O tubo segue uma linha aberta ou arco; um contorno fechado não serve de caminho.
       const paths = sketchList().filter(s => sketchPaths(s).length);
