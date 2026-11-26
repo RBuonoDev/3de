@@ -224,7 +224,22 @@ export const PLANES = {
   XZ: { label: 'Plano Frontal', toWorld: (u, v, n, o) => [u, n + o, -v], normal: [0, 1, 0], displayFlip: -1 },
   YZ: { label: 'Plano Direito', toWorld: (u, v, n, o) => [n + o, u, v], normal: [1, 0, 0], displayFlip: 1 },
 };
+/** Plano sobre uma face de peça: origem no ponto clicado, normal da face e eixos U, V (U x V = normal). */
+export function faceFrame(o, n) {
+  const N = norm3(n), ref = Math.abs(N[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  const U = norm3(cross(ref, N)), V = cross(N, U);
+  return { o: [...o], u: U, v: V, n: N };
+}
+/** Registra (ou atualiza) o plano de uma face com a chave `face_...`; chaves desse tipo não aparecem na lista de planos fixos. */
+export function registerFacePlane(key, fr) {
+  PLANES[key] = {
+    label: 'Plano da face', face: true, normal: fr.n, displayFlip: 1,
+    toWorld: (u, v, k, off) => [0, 1, 2].map(i => fr.o[i] + fr.u[i] * u + fr.v[i] * v + fr.n[i] * (k + off)),
+    toLocal: (p) => { const d = [p[0] - fr.o[0], p[1] - fr.o[1], p[2] - fr.o[2]]; return [dot(d, fr.u), dot(d, fr.v)]; },
+  };
+}
 export function worldToSketch(plane, offset, p) {
+  if (PLANES[plane]?.toLocal) return PLANES[plane].toLocal(p);
   if (plane === 'XY') return [p[0], p[1]];
   if (plane === 'XZ') return [p[0], -p[2]];
   return [p[1], p[2]];
@@ -880,6 +895,7 @@ const AXIS = { x: 0, y: 1, z: 2 };
 export function rebuild(features, opts = {}) {
   const bodies = new Map(), errors = {}, surfaces = new Map();
   const info = { joints: [] };
+  for (const f of features) if (f.type === 'sketch' && f.frame) registerFacePlane(f.plane, f.frame);
   let current = null;
   const sketches = new Map(features.filter(f => f.type === 'sketch').map(f => [f.id, f]));
   const sketchOf = (id) => {

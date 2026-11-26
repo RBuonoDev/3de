@@ -3,7 +3,7 @@
 // propriedades -> esboço -> organizar -> inspecionar -> arquivos -> comandos -> eventos.
 
 import { Renderer, v3, flatMesh } from './gfx.js';
-import { rebuild, PLANES, worldToSketch, sketchLoops, sketchPaths, commandsToFeatures, circlePoints, edgeAt, faceAt, intersect, volumeOf, meshOf, entityPoints } from './kernel.js';
+import { rebuild, PLANES, faceFrame, registerFacePlane, worldToSketch, sketchLoops, sketchPaths, commandsToFeatures, circlePoints, edgeAt, faceAt, intersect, volumeOf, meshOf, entityPoints } from './kernel.js';
 import { trianglesOf, toObj, to3mf, toStep, toDxf, parseObj, parseDxf, parseSvg } from './files3d.js';
 import { ICON } from './icons.js';
 
@@ -391,7 +391,7 @@ function renderTree() {
   tree.append(node('part', state.name, { chev: true }));
   const toggle = (key) => () => { collapsed.has(key) ? collapsed.delete(key) : collapsed.add(key); renderTree(); };
   tree.append(node('folderTree', 'Planos', { lvl: 1, chev: !collapsed.has('planes'), onclick: toggle('planes') }));
-  if (!collapsed.has('planes')) for (const [k, p] of Object.entries(PLANES)) tree.append(node('plane', p.label, { lvl: 2, id: `plane:${k}`, onclick: () => select(`plane:${k}`) }));
+  if (!collapsed.has('planes')) for (const [k, p] of Object.entries(PLANES).filter(([k]) => !k.startsWith('face_'))) tree.append(node('plane', p.label, { lvl: 2, id: `plane:${k}`, onclick: () => select(`plane:${k}`) }));
   tree.append(node('origin', 'Origem', { lvl: 1 }));
   tree.append(node('folderTree', 'Corpos', { lvl: 1, chev: !collapsed.has('bodies'), onclick: toggle('bodies') }));
   if (!collapsed.has('bodies')) {
@@ -1047,18 +1047,34 @@ function startSketch(offset = 0) {
   if (state.mode !== 'idle') return;
   const sel = state.selected || '';
   if (sel.startsWith('plane:')) { enterSketch({ id: newId(), type: 'sketch', name: nextName('Esboço'), plane: sel.slice(6), offset, entities: [] }, true); return; }
+  const faceBtn = state.bodies.length ? [h('button', { class: 'btn', onclick: () => {
+    closeProps(); state.facePick = true; canvas.style.cursor = 'crosshair';
+    setStatus('Clique numa face plana de uma peça para criar o esboço nela. Esc cancela.');
+  } }, 'Face de uma peça')] : [];
   openProps('Novo esboço', [h('p', { class: 'note' }, 'Escolha o plano do esboço:'),
-    h('div', { class: 'row' }, Object.entries(PLANES).map(([k, p]) => h('button', { class: 'btn', onclick: () => {
+    h('div', { class: 'row' }, Object.entries(PLANES).filter(([k]) => !k.startsWith('face_')).map(([k, p]) => h('button', { class: 'btn', onclick: () => {
       closeProps(); enterSketch({ id: newId(), type: 'sketch', name: nextName('Esboço'), plane: k, offset, entities: [] }, true);
-    } }, p.label)))], { confirm: false });
+    } }, p.label)), ...faceBtn)], { confirm: false });
   setStatus('Escolha um plano para o esboço.');
 }
+/** Clique numa face plana da peça: o esboço novo fica sobre essa face. */
+function pickFacePlane(px, py) {
+  state.facePick = false; canvas.style.cursor = 'default';
+  const hit = gfx.pick(px, py);
+  let face = null;
+  if (hit) for (const b of state.bodies) { face = faceAt(b.polys, hit); if (face) break; }
+  if (!face) { setStatus('Nenhuma face plana aqui. Use Novo esboço e clique de novo numa face.', true); return; }
+  const fr = faceFrame(hit, face.n), key = `face_${newId()}`;
+  registerFacePlane(key, fr);
+  enterSketch({ id: newId(), type: 'sketch', name: nextName('Esboço'), plane: key, frame: fr, offset: 0, entities: [] }, true);
+}
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.facePick) { state.facePick = false; canvas.style.cursor = 'default'; setStatus(''); } });
 function offsetPlane() {
   if (state.mode !== 'idle') return;
   let plane = 'XY', offset = 10;
   const preview = () => { planeHint = { plane, offset }; uploadMeshes(); drawLines(); };
   openProps('Plano deslocado', [
-    fieldset('Referência', selectField('Plano base', plane, Object.entries(PLANES).map(([k, p]) => [k, p.label]), v => { plane = v; preview(); }),
+    fieldset('Referência', selectField('Plano base', plane, Object.entries(PLANES).filter(([k]) => !k.startsWith('face_')).map(([k, p]) => [k, p.label]), v => { plane = v; preview(); }),
       numberField('Deslocamento', offset, v => { offset = v; preview(); }, { step: 1 })),
     h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => { closeProps(); planeHint = null; enterSketch({ id: newId(), type: 'sketch', name: nextName('Esboço'), plane, offset, entities: [] }, true); } }, 'Criar esboço neste plano'))],
   { confirm: false });
@@ -1067,12 +1083,12 @@ function offsetPlane() {
 
 function enterSketch(feature, isNew) {
   planeHint = null;
+  if (feature.frame) registerFacePlane(feature.plane, feature.frame);
   state.mode = 'sketch';
   state.sketch = { draft: structuredClone(feature), original: feature, isNew, tool: isNew ? 'rect' : 'select', temp: [], sel: -1, cursor: null, op: null,
     opts: { n: 6, r: 3, axis: 'v', dx: 20, dy: 0, ang: 0, copy: true, nx: 3, ny: 1, sx: 20, sy: 20, count: 6, total: 360, cx: 0, cy: 0, dist: 2 } };
   const view = { XY: 'top', XZ: 'front', YZ: 'right' }[feature.plane];
-  const [az, el] = VIEWS[view];
-  cam.setView((az * Math.PI) / 180, (el * Math.PI) / 180);
+  if (view) { const [az, el] = VIEWS[view]; cam.setView((az * Math.PI) / 180, (el * Math.PI) / 180); }
   state.tab = 'sketch';
   renderRibbon();
   uploadMeshes();
@@ -2271,7 +2287,8 @@ canvas.addEventListener('pointerup', (e) => {
   const d = drag; drag = null;
   if (!d || d.moved || d.button !== 0) return;
   const r = canvas.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
-  if (state.mode === 'sketch') sketchClick(px, py);
+  if (state.facePick && state.mode === 'idle') pickFacePlane(px, py);
+  else if (state.mode === 'sketch') sketchClick(px, py);
   else if (state.mode === 'feature') featureClick(px, py);
   else if (state.mode === 'measure') {
     const p = gfx.pick(px, py);
