@@ -620,7 +620,12 @@ function startFeature(type, shape) {
   const base = (t, extra) => ({ id: newId(), type: t, name: nextName(FEATURE_PREFIX[t]), ...extra });
   const simple = {
     sweep: () => needSketches(2, 'A varredura') && base('sweep', { profile: sketchList().find(s => s.id !== pathSketch().id)?.id, path: pathSketch().id, operation: state.bodies.length ? 'join' : 'new' }),
-    pipe: () => needSketches(1, 'O tubo') && base('pipe', { path: pathSketch().id, d: 10, di: 6, operation: state.bodies.length ? 'join' : 'new' }),
+    pipe: () => {
+      // O tubo segue uma linha aberta ou arco; um contorno fechado não serve de caminho.
+      const paths = sketchList().filter(s => sketchPaths(s).length);
+      if (!paths.length) { setStatus('O tubo precisa de um esboço com linha aberta ou arco (caminho). Crie com Novo esboço.', true); return null; }
+      return base('pipe', { path: paths.at(-1).id, d: 10, di: 6, operation: state.bodies.length ? 'join' : 'new' });
+    },
     loft: () => needSketches(2, 'A transição') && base('loft', { sketches: sketchList().slice(-2).map(s => s.id), operation: state.bodies.length ? 'join' : 'new' }),
     coil: () => base('coil', { R: 15, d: 3, pitch: 8, turns: 5, section: 'circle', axis: 'z', x: 0, y: 0, z: 0, operation: state.bodies.length ? 'join' : 'new' }),
     thread: () => needBody() && (() => { const b = box(); const r = Math.round(Math.min(b.max[0] - b.min[0], b.max[1] - b.min[1]) * 50) / 100 || 10;
