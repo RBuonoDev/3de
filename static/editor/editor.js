@@ -2303,6 +2303,11 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (e.shiftKey && k === 'r' && idle()) { e.preventDefault(); if (state.lastCmd) state.lastCmd(); else setStatus('Nenhum comando para repetir.', true); return; }
+  // Atalhos de modelagem (sem Ctrl), com o mesmo significado dos comandos da faixa.
+  if (!e.ctrlKey && !e.altKey && idle()) {
+    const solidKeys = { e: () => F('extrude')(), h: () => F('hole')(), f: () => F('fillet')(), m: () => F('move')(), i: () => startMeasure() };
+    if (solidKeys[k]) { e.preventDefault(); solidKeys[k](); return; }
+  }
   if (k === 's' && !e.ctrlKey) { e.preventDefault(); $('#cmdSearch').focus(); return; }
   if (e.key === 'Escape') cancelMode();
   else if (e.key === 'Enter' && state.mode !== 'idle') $('#okBtn').click();
