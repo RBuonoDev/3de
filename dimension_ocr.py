@@ -43,6 +43,15 @@ def _number(text: str) -> float | None:
     return value if 0 < value <= 500 else None
 
 
+def _sharpen(image: np.ndarray) -> np.ndarray:
+    """Realça contraste e bordas para o OCR ler cotas pequenas ou borradas."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+    blur = cv2.GaussianBlur(gray, (0, 0), 1.6)
+    sharp = cv2.addWeighted(gray, 1.8, blur, -0.8, 0)
+    return cv2.cvtColor(sharp, cv2.COLOR_GRAY2BGR)
+
+
 def inspect_dimensions(data: bytes, result: dict) -> dict:
     """Reporta o que o OCR viu e o que continua sem leitura confiável."""
     image = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
@@ -57,6 +66,7 @@ def inspect_dimensions(data: bytes, result: dict) -> dict:
         result["ocr_message"] = "A leitura automática das cotas não está disponível; confira todas as medidas."
         return result
     found = []
+    unreadable = []
 
     def collect(output, image_height, image_width, min_score=.45):
         boxes = output.boxes if output.boxes is not None else []
@@ -65,6 +75,12 @@ def inspect_dimensions(data: bytes, result: dict) -> dict:
             if center_y < .035 or center_y > .965:
                 continue  # Índices da moldura não são cotas da peça.
             value = _number(text)
+            if (value is None or score < min_score) and re.search(r"\d", text):
+                # Número que o OCR viu mas não conseguiu ler com segurança: marca na imagem.
+                coordinates = np.asarray(box)
+                unreadable.append({"text": text, "confidence": round(float(score), 2),
+                                   "x": round(float(coordinates[:, 0].mean()) / image_width, 3),
+                                   "y": round(center_y, 3)})
             if value is not None and score >= min_score:
                 display = text
                 if text.startswith(("Ø", "⌀", "φ", "Φ")):
@@ -94,6 +110,20 @@ def inspect_dimensions(data: bytes, result: dict) -> dict:
                 collect(_reader()(turned), turned.shape[0], turned.shape[1], .9)
             except Exception:
                 pass
+    # Nitidez: se a leitura normal achou pouco, repete o OCR numa imagem realçada.
+    if len(found) < 10 and not LOW_MEMORY:
+        try:
+            sharp = _sharpen(image)
+            collect(_reader()(sharp), sharp.shape[0], sharp.shape[1], .35)
+        except Exception:
+            pass
+    # Mesma cota lida em duas passadas pode aparecer como não lida numa delas: fica só a lida.
+    # Texto da cartela e legendas (SCALE, SHEET, nomes) não são cotas: fora da marcação.
+    unreadable = [u for u in unreadable
+                  if not re.search(r"[A-Za-z]{3,}", u["text"])
+                  and not (u["x"] > .6 and u["y"] > .8)
+                  and not any(abs(u["x"] - f["x"]) < .02 and abs(u["y"] - f["y"]) < .02 for f in found)]
+    result["ocr_unreadable"] = unreadable[:40]
     expected = [float(value) for value in result.get("dimensions", {}).values()
                 if isinstance(value, (int, float))]
     missing = [value for value in expected

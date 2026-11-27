@@ -407,6 +407,79 @@ function showOcr(out) {
   ui.ocrPanel.style.display = 'block';
   ui.ocrSummary.textContent = (out.ocr_message || '') +
     (readings.length ? ' Números encontrados: ' + readings.map(item => item.display || item.text).join(', ') + '.' : '');
+  showUnreadable(out);
+}
+
+/** Marca com círculo vermelho cada número que o OCR viu e não leu, e abre uma caixa para digitar. */
+function showUnreadable(out) {
+  let box = document.getElementById('ocrManual');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'ocrManual';
+    box.style.marginTop = '12px';
+    ui.ocrPanel.append(box);
+  }
+  box.replaceChildren();
+  const marks = out.ocr_unreadable || [];
+  if (!marks.length) return;
+  const title = document.createElement('p');
+  title.textContent = 'Cotas que não consegui ler (marcadas em vermelho). Digite o valor e escolha a qual medida ela pertence:';
+  box.append(title);
+  const keys = Object.keys(out.dimensions || {});
+  if (state.sourceImage) {
+    const canvas = document.createElement('canvas');
+    const scale = Math.min(1, 560 / state.sourceImage.width);
+    canvas.width = Math.round(state.sourceImage.width * scale);
+    canvas.height = Math.round(state.sourceImage.height * scale);
+    canvas.style.maxWidth = '100%';
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(state.sourceImage, 0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#d00';
+    ctx.lineWidth = 3;
+    marks.forEach((mark, index) => {
+      const cx = mark.x * canvas.width, cy = mark.y * canvas.height;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(14, canvas.width * .025), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#d00';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(String(index + 1), cx + 16, cy - 12);
+    });
+    box.append(canvas);
+  }
+  marks.forEach((mark, index) => {
+    const row = document.createElement('div');
+    row.className = 'dim';
+    const label = document.createElement('span');
+    label.textContent = (index + 1) + ' · OCR leu "' + mark.text + '"';
+    const number = document.createElement('input');
+    number.type = 'number';
+    number.step = '.1';
+    number.placeholder = 'valor (mm)';
+    const select = document.createElement('select');
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = keys.length ? 'Medida correspondente…' : 'Nenhuma medida no modelo';
+    select.append(none);
+    for (const key of keys) {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = labelFor(key);
+      select.append(option);
+    }
+    const apply = () => {
+      const field = ui.fields.querySelector(`input[data-key="${select.value}"]`);
+      if (!field || number.value === '') return;
+      field.value = number.value;
+      update();
+    };
+    number.addEventListener('change', apply);
+    select.addEventListener('change', apply);
+    row.append(label, number, select);
+    box.append(row);
+  });
 }
 
 async function handleDrawing(selected) {
