@@ -279,6 +279,9 @@ const DIMENSION_NAMES = {
   boss_length: 'Comprimento do ressalto', boss_width: 'Largura do ressalto',
   bottom_thickness: 'Espessura da base',
   bridge_height: 'Altura da ponte central', bridge_width: 'Largura da ponte central',
+  base_length: 'Comprimento da base', base_width: 'Largura da base', base_thickness: 'Espessura da base do mancal',
+  body_length: 'Comprimento do corpo', body_height: 'Altura do corpo', bore_diameter: 'Diâmetro do berço',
+  bore_center_height: 'Altura do centro do berço',
   bulge_diameter: 'Diâmetro do ressalto arredondado', bulge_height: 'Altura do ressalto arredondado',
   cavity_depth: 'Profundidade da cavidade', center_diameter: 'Diâmetro central',
   depth: 'Profundidade', end_diameter: 'Diâmetro das pontas', end_length: 'Comprimento de cada ponta',
@@ -410,6 +413,25 @@ function showOcr(out) {
   showUnreadable(out);
 }
 
+/** Monta um mancal com as cotas de formulário (padrão da prancha) e gera a prévia. */
+function startPillowBlock(out) {
+  state.kind = 'pillow_block';
+  state.geometry = null;
+  state.dims = {
+    base_length: 150, base_width: 90, base_thickness: 20,
+    body_length: 65, body_height: 61.39, bore_diameter: 65, bore_center_height: 61.39,
+  };
+  state.currentStl = null;
+  state.currentProjectUrl = null;
+  ui.modelTitle.textContent = 'Mancal · cotas em milímetros';
+  ui.reviewNote.textContent = 'Mancal aproximado: confira cada cota com a prancha. Os furos de fixação da base ainda não entram no modelo.';
+  buildFields({});
+  ui.uncertainty.textContent = 'Medidas da prancha aproximadas; base e corpo estão no modelo, furos de fixação e bucha não.';
+  ui.section.style.display = 'block';
+  setStatus('Mancal montado com as cotas padrão. Ajuste os campos e confira a prévia.');
+  update();
+}
+
 /** Marca com círculo vermelho cada número que o OCR viu e não leu, e abre uma caixa para digitar. */
 function showUnreadable(out) {
   let box = document.getElementById('ocrManual');
@@ -425,7 +447,17 @@ function showUnreadable(out) {
   const title = document.createElement('p');
   title.textContent = 'Cotas que não consegui ler (marcadas em vermelho). Digite o valor e escolha a qual medida ela pertence:';
   box.append(title);
-  const keys = Object.keys(out.dimensions || {});
+  const pillowKeys = ['base_length', 'base_width', 'base_thickness', 'body_length', 'body_height', 'bore_diameter', 'bore_center_height'];
+  const keys = out.recognized ? Object.keys(out.dimensions || {}) : pillowKeys;
+  if (!out.recognized) {
+    // Peça não reconhecida: o usuário escolhe montar um mancal com as cotas que digitar.
+    const make = document.createElement('button');
+    make.type = 'button';
+    make.className = 'secondary';
+    make.textContent = 'Montar mancal com estas cotas';
+    make.onclick = () => startPillowBlock(out);
+    box.append(make);
+  }
   if (state.sourceImage) {
     const canvas = document.createElement('canvas');
     const scale = Math.min(1, 560 / state.sourceImage.width);

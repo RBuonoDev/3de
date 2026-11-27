@@ -11,7 +11,7 @@ import math
 import struct
 
 from shapely import constrained_delaunay_triangles
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString, Point, Polygon
 from shapely.geometry.polygon import orient
 from shapely.ops import unary_union
 
@@ -185,8 +185,66 @@ def _round_shape(dimensions: dict):
     return shape, thickness
 
 
+PILLOW_DEFAULTS = {
+    # Valores lidos da prancha "mancal" (mm); conferir antes de fabricar.
+    "base_length": 150.0,
+    "base_width": 90.0,
+    "base_thickness": 20.0,
+    "body_length": 65.0,
+    "body_height": 61.39,
+    "bore_diameter": 65.0,
+    "bore_center_height": 61.39,
+}
+
+
+def _pillow_dimensions(values: dict) -> dict[str, float]:
+    dims = dict(PILLOW_DEFAULTS)
+    for key, value in values.items():
+        if key not in dims:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Cota inválida: {key}") from None
+        if not math.isfinite(number) or not 1 <= number <= 300:
+            raise ValueError(f"Cota fora do intervalo: {key}")
+        dims[key] = number
+    if dims["bore_diameter"] / 2 >= dims["bore_center_height"]:
+        raise ValueError("O furo do mancal deve ficar acima da base.")
+    if dims["body_length"] >= dims["base_length"]:
+        raise ValueError("O corpo deve ser menor que a base.")
+    return dims
+
+
+def _pillow_stl(values: dict) -> bytes:
+    """Mancal de eixo horizontal: base retangular e corpo com berço semicircular.
+
+    O perfil frontal (X, Z) é extrudado ao longo da largura (Y), como na prancha:
+    o furo do berço atravessa a peça pela largura.
+    """
+    d = _pillow_dimensions(values)
+    width = d["base_width"]
+    base = Polygon([(-d["base_length"] / 2, 0), (d["base_length"] / 2, 0),
+                    (d["base_length"] / 2, d["base_thickness"]), (-d["base_length"] / 2, d["base_thickness"])])
+    body = Polygon([(-d["body_length"] / 2, d["base_thickness"]), (d["body_length"] / 2, d["base_thickness"]),
+                    (d["body_length"] / 2, d["body_height"]), (-d["body_length"] / 2, d["body_height"])])
+    profile = unary_union([base, body]).difference(
+        Point(0, d["bore_center_height"]).buffer(d["bore_diameter"] / 2, quad_segs=48))
+    if profile.is_empty or not profile.is_valid:
+        raise ValueError("As cotas escolhidas não formam um mancal válido.")
+    raw = _extrude(profile, width)
+    triangles = []
+    for normal, a, b, c in raw:
+        # Perfil (x, z) virou (x, largura, altura): troca Y e Z, refaz o sentido e a normal.
+        m = [(p[0], p[2] - width / 2, p[1]) for p in (a, c, b)]
+        triangles.append((_normal(*m), *m))
+    return _to_stl(b"3DE pillow block - dimensions in mm", triangles)
+
+
 def make_stl(dimensions: dict) -> bytes:
     """Gera a prévia STL das peças que não dependem do motor CAD."""
+    if dimensions.get("kind") == "pillow_block":
+        return _pillow_stl(dimensions)
     if dimensions.get("kind") == "profile2d":
         from profile_reader import validate
 
